@@ -1,0 +1,53 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/*
+ * Kitchen slip — Star Micronics TSP100 series (80 mm thermal, ~72 mm printable width @203dpi).
+ * Browser still shows one OS print confirmation; size here matches the roll so layout fits the TSP driver.
+ */
+:root {
+  --receipt-paper-width: 80mm;
+  --receipt-printable-width: 72mm;
+}
+
+@page {
+  size: var(--receipt-paper-width) auto;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    width: var(--receipt-paper-width);
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .receipt-print,
+  .receipt-print * {
+    visibility: visible;
+  }
+
+  .receipt-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    box-sizing: border-box;
+    width: var(--receipt-printable-width);
+    max-width: var(--receipt-printable-width);
+    margin: 0;
+    padding: 2mm 2.5mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
