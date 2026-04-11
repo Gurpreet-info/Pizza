@@ -14,6 +14,9 @@ return [
     |
     */
 
+    /*
+    | Use smtp in .env (MAIL_MAILER=smtp) for real delivery. Default "log" only writes to storage/logs.
+    */
     'default' => env('MAIL_MAILER', 'log'),
 
     /*
@@ -39,7 +42,30 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
+            /*
+            | Symfony only allows schemes "smtp" (STARTTLS on 587) and "smtps" (SSL on 465).
+            | "tls" in .env is normalized to "smtp". MAIL_ENCRYPTION=tls also maps to "smtp".
+            */
+            'scheme' => (function () {
+                $explicit = env('MAIL_SCHEME');
+                if (is_string($explicit) && $explicit !== '') {
+                    return match (strtolower($explicit)) {
+                        'tls', 'starttls' => 'smtp',
+                        'ssl' => 'smtps',
+                        default => $explicit,
+                    };
+                }
+
+                return match (strtolower((string) env('MAIL_ENCRYPTION', ''))) {
+                    'ssl', 'smtps' => 'smtps',
+                    'tls', 'starttls' => 'smtp',
+                    default => match ((int) env('MAIL_PORT', 0)) {
+                        465 => 'smtps',
+                        587 => 'smtp',
+                        default => null,
+                    },
+                };
+            })(),
             'url' => env('MAIL_URL'),
             'host' => env('MAIL_HOST', '127.0.0.1'),
             'port' => env('MAIL_PORT', 2525),
