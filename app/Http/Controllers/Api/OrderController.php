@@ -10,9 +10,12 @@ use App\Support\PhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class OrderController extends Controller
 {
+    private const ADMIN_ORDER_DEFAULT_LOOKBACK_DAYS = 3;
+
     private const ORDER_WITH = [
         'location',
         'items.menuItem',
@@ -26,9 +29,45 @@ class OrderController extends Controller
             'phone' => ['sometimes', 'nullable', 'string', 'max:30'],
             'email' => ['sometimes', 'nullable', 'string', 'max:255'],
             'coupon_code' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'date_filter' => ['sometimes', 'nullable', Rule::in(['last_week', 'last_month', 'custom'])],
+            'from_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'to_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
         ]);
 
-        $query = Order::query()->with(self::ORDER_WITH)->latest();
+        $query = Order::query()
+            ->with(self::ORDER_WITH)
+            ->latest();
+
+        $dateFilter = $request->query('date_filter');
+        $dateFilter = is_string($dateFilter) ? trim($dateFilter) : '';
+
+        if ($dateFilter === '') {
+            $query->where('created_at', '>=', now()->subDays(self::ADMIN_ORDER_DEFAULT_LOOKBACK_DAYS));
+        } elseif ($dateFilter === 'last_week') {
+            $query->where('created_at', '>=', now()->subDays(7));
+        } elseif ($dateFilter === 'last_month') {
+            $query->where('created_at', '>=', now()->subDays(30));
+        } elseif ($dateFilter === 'custom') {
+            $fromDate = $request->query('from_date');
+            $toDate = $request->query('to_date');
+
+            if (! is_string($fromDate) || ! is_string($toDate) || trim($fromDate) === '' || trim($toDate) === '') {
+                return response()->json([
+                    'message' => 'Custom date filter requires both from and to dates.',
+                ], 422);
+            }
+
+            if ($fromDate > $toDate) {
+                return response()->json([
+                    'message' => 'From date must be before or equal to to date.',
+                ], 422);
+            }
+
+            $query->whereBetween('created_at', [
+                $fromDate.' 00:00:00',
+                $toDate.' 23:59:59',
+            ]);
+        }
 
         $phone = $request->query('phone');
         if (is_string($phone) && trim($phone) !== '') {
