@@ -1,22 +1,45 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { Offer } from '../types';
 import { spendGetFreeMenuBadge } from '../lib/spendOfferDisplay';
 import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { HomePageBanner } from '../components/HomePageBanner';
+import { usePageMeta } from '../hooks/usePageMeta';
 import { Info, UtensilsCrossed } from 'lucide-react';
 
 export function MenuPage() {
+  usePageMeta(
+    'Menu',
+    'Browse every category at Pizza Offers — sizes, toppings, and active deal badges before you add to cart.'
+  );
+
   const { menuItems, categories, getActiveOffers, ensureMenuBrowseLoaded } = useApp();
+  const navigate = useNavigate();
+  const { categorySlug } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     void ensureMenuBrowseLoaded();
   }, []);
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
-  const selectedCategoryId = searchParams.get('category') || 'all';
+  const toCategorySlug = (name: string) =>
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
+  const selectedCategoryId = useMemo(() => {
+    // Keep backward compatibility with old query links like ?category=1.
+    const queryCategory = searchParams.get('category');
+    if (queryCategory) return queryCategory;
+    if (!categorySlug) return 'all';
+    const matched = categories.find((c) => toCategorySlug(c.name) === categorySlug);
+    return matched ? matched.id : 'all';
+  }, [searchParams, categorySlug, categories]);
 
   const filteredItems = selectedCategoryId === 'all' 
     ? menuItems 
@@ -61,10 +84,29 @@ export function MenuPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div>
+      <HomePageBanner
+        title="Explore Our Menu"
+        subtitle="Browse categories, customize your favorites, and order fresh food made your way."
+      />
+      <div className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold mb-8">Our Menu</h1>
 
-      <Tabs value={selectedCategoryId} onValueChange={(value) => setSearchParams({ category: value })}>
+      <Tabs
+        value={selectedCategoryId}
+        onValueChange={(value) => {
+          if (value === 'all') {
+            setSearchParams({});
+            navigate('/popularpizza-menu');
+            return;
+          }
+          const category = categories.find((c) => c.id === value);
+          if (!category) return;
+          const slug = toCategorySlug(category.name);
+          setSearchParams({});
+          navigate(`/popularpizza-menu/category/${slug}`);
+        }}
+      >
         <div
           className={[
             'md:contents',
@@ -120,7 +162,7 @@ export function MenuPage() {
                   tabIndex={0}
                 >
                   <Link
-                    to={`/menu/${item.id}`}
+                    to={`/popularpizza-menu/item/${item.id}`}
                     title="Details"
                     onClick={(e) => e.stopPropagation()}
                     aria-label={`More about ${item.name}`}
@@ -176,7 +218,7 @@ export function MenuPage() {
                       <span className="text-lg font-bold text-orange-600 tabular-nums sm:text-xl">
                         ${item.basePrice.toFixed(2)}
                       </span>
-                      <Link to={`/menu/${item.id}`} onClick={(e) => e.stopPropagation()}>
+                      <Link to={`/popularpizza-menu/item/${item.id}`} onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="outline"
                           size="sm"
@@ -200,6 +242,7 @@ export function MenuPage() {
           )}
         </TabsContent>
       </Tabs>
+      </div>
     </div>
   );
 }

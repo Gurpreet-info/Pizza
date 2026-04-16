@@ -7,8 +7,14 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
+import { usePageMeta } from '../hooks/usePageMeta';
 
 export function LoginPage() {
+  usePageMeta(
+    'Login',
+    'Sign in or register for Pizza Offers — faster checkout, order history, and account recovery options.'
+  );
+
   const navigate = useNavigate();
   const { user, login, loginWithEmailOtp, apiRequest, registerWithErrorMessage } = useApp();
 
@@ -271,7 +277,7 @@ export function LoginPage() {
           </Tabs>
 
           <div className="mt-6 text-center">
-            <Link to="/menu" className="text-sm text-gray-600 hover:text-orange-600">
+            <Link to="/popularpizza-menu" className="text-sm text-gray-600 hover:text-orange-600">
               Continue as guest
             </Link>
           </div>

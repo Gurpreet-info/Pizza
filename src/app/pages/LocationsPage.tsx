@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { MapPin, Phone, Clock, ExternalLink } from 'lucide-react';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { usePageMeta } from '../hooks/usePageMeta';
 
 /**
  * Map embeds use each location’s `address` from the API.
@@ -21,6 +22,11 @@ function googleMapsOpenUrl(address: string) {
 }
 
 export function LocationsPage() {
+  usePageMeta(
+    'Locations',
+    'Find Pizza Offers store addresses, hours, phone numbers, and map directions for pickup or visits.'
+  );
+
   const { locations, ensureLocationsPageLoaded } = useApp();
 
   useEffect(() => {

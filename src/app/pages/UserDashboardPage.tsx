@@ -10,6 +10,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { usePageMeta } from '../hooks/usePageMeta';
 
 const formatStatusLabel = (status: string) =>
   status.length ? status.charAt(0).toUpperCase() + status.slice(1) : status;
@@ -125,6 +126,11 @@ function OrderPricingFooter({ order }: { order: Order }) {
 }
 
 export function UserDashboardPage() {
+  usePageMeta(
+    'My orders',
+    'View your Pizza Offers order history, statuses, totals, and account details in one place.'
+  );
+
   const navigate = useNavigate();
   const {
     user,
@@ -290,7 +296,7 @@ export function UserDashboardPage() {
           {userOrders.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-gray-500 mb-4">You haven't placed any orders yet</p>
-              <Button onClick={() => navigate('/menu')}>Browse Menu</Button>
+              <Button onClick={() => navigate('/popularpizza-menu')}>Browse Menu</Button>
             </div>
           ) : (
             <div className="space-y-6">

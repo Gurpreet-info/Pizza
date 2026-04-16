@@ -19,6 +19,7 @@ import { OptionsManager, LocationsManager, OrdersManager } from '../components/A
 import { OffersManager } from '../components/OffersManager';
 import { DeliveryPostalCodesManager } from '../components/DeliveryPostalCodesManager';
 import orderReadySoundUrl from '../../assets/order-ready.mpeg?url';
+import { usePageMeta } from '../hooks/usePageMeta';
 
 const ADMIN_ORDER_ACK_KEY = 'pizza_admin_orders_last_ack_id';
 
@@ -28,6 +29,11 @@ function maxNumericOrderId(orderList: Order[]): number {
 }
 
 export function AdminPage() {
+  usePageMeta(
+    'Admin',
+    'Pizza Offers admin — manage menu, locations, coupons, offers, delivery zones, and order history.'
+  );
+
   const navigate = useNavigate();
   const { 
     user, 

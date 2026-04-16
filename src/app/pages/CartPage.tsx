@@ -13,8 +13,14 @@ import {
   cartTotalOfferDiscountDollars,
   isCartAutoAddedBogoFreeLine,
 } from '../lib/cartPricing';
+import { usePageMeta } from '../hooks/usePageMeta';
 
 export function CartPage() {
+  usePageMeta(
+    'Cart',
+    'Review your Pizza Offers cart — items, quantities, options, and applied deals before checkout.'
+  );
+
   const navigate = useNavigate();
   const { cart, removeFromCart, updateCartItemQuantity, applyOfferToCart, ensureCartPricingLoaded } = useApp();
 
@@ -44,7 +50,7 @@ export function CartPage() {
         <ShoppingBag className="h-24 w-24 mx-auto text-gray-300 mb-4" />
         <h1 className="text-3xl font-bold mb-4">Your cart is empty</h1>
         <p className="text-gray-600 mb-8">Add some delicious items to get started!</p>
-        <Link to="/menu">
+        <Link to="/popularpizza-menu">
           <Button size="lg">Browse Menu</Button>
         </Link>
       </div>
@@ -218,7 +224,7 @@ export function CartPage() {
                 Proceed to Checkout
               </Button>
 
-              <Link to="/menu">
+              <Link to="/popularpizza-menu">
                 <Button variant="outline" className="w-full">
                   Continue Shopping
                 </Button>

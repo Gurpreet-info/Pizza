@@ -100,7 +100,14 @@ interface AppContextType {
   
   createOrder: (order: Omit<Order, 'id' | 'createdAt'>) => Promise<string>;
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
-  fetchAdminOrders: (filters?: { phone?: string; email?: string; coupon_code?: string }) => Promise<Order[]>;
+  fetchAdminOrders: (filters?: {
+    phone?: string;
+    email?: string;
+    coupon_code?: string;
+    date_filter?: 'last_week' | 'last_month' | 'custom';
+    from_date?: string;
+    to_date?: string;
+  }) => Promise<Order[]>;
   refreshAdminOrdersList: () => Promise<void>;
   apiRequest: (path: string, options?: RequestInit, meta?: ApiRequestMeta) => Promise<unknown>;
 
@@ -1260,14 +1267,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     phone?: string;
     email?: string;
     coupon_code?: string;
+    date_filter?: 'last_week' | 'last_month' | 'custom';
+    from_date?: string;
+    to_date?: string;
   }): Promise<Order[]> => {
     const params = new URLSearchParams();
     const phone = filters?.phone?.trim();
     const email = filters?.email?.trim();
     const coupon = filters?.coupon_code?.trim();
+    const dateFilter = filters?.date_filter;
+    const fromDate = filters?.from_date?.trim();
+    const toDate = filters?.to_date?.trim();
     if (phone) params.set('phone', phone);
     if (email) params.set('email', email);
     if (coupon) params.set('coupon_code', coupon);
+    if (dateFilter) params.set('date_filter', dateFilter);
+    if (fromDate) params.set('from_date', fromDate);
+    if (toDate) params.set('to_date', toDate);
     const qs = params.toString();
     const path = qs ? `/orders?${qs}` : '/orders';
     const data = await request(path);

@@ -5,8 +5,15 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Copy, Check, Tag, Calendar, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { HomePageBanner } from '../components/HomePageBanner';
 
 export function CouponsPage() {
+  usePageMeta(
+    'Coupons',
+    'Browse active Pizza Offers coupon codes — copy at checkout and save on eligible orders.'
+  );
+
   const { coupons, ensureCouponsPageLoaded } = useApp();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -46,8 +53,13 @@ export function CouponsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="container mx-auto px-4">
+    <div>
+      <HomePageBanner
+        title="Coupons & Savings"
+        subtitle="Find active coupon codes and apply them at checkout to save on your next order."
+      />
+      <div className="min-h-screen bg-gray-50 py-12">
+        <div className="container mx-auto px-4">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
           <div className="text-center mb-12">
@@ -182,6 +194,7 @@ export function CouponsPage() {
           </Card>
         </div>
       </div>
+    </div>
     </div>
   );
 }

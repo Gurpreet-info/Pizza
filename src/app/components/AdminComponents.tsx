@@ -36,7 +36,7 @@ function OrderReceiptContent({ order, locations }: { order: Order; locations: Lo
   const fmt = (n: number) => `$${n.toFixed(2)}`;
   const store =
     (order.locationId ? locations.find((l) => l.id === order.locationId) : undefined) ?? locations[0];
-  const storeName = store?.name || 'Delicious Bites';
+  const storeName = store?.name || 'Pizza Offers';
   const storePhone = store?.phone || '—';
   const storeAddress = store?.address || '—';
 
@@ -155,7 +155,7 @@ function OrderReceiptContent({ order, locations }: { order: Order; locations: Lo
       </div>
 
       <div className="border-t border-dashed border-gray-600 pt-3 text-center text-[10px]">
-        Thank you for ordering from Delicious Bites!
+        Thank you for ordering from Pizza Offers!
       </div>
     </div>
   );
@@ -960,10 +960,24 @@ type OrdersManagerProps = {
   orders: Order[];
   locations: Location[];
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
-  fetchAdminOrders: (filters?: { phone?: string; email?: string; coupon_code?: string }) => Promise<Order[]>;
+  fetchAdminOrders: (filters?: {
+    phone?: string;
+    email?: string;
+    coupon_code?: string;
+    date_filter?: 'last_week' | 'last_month' | 'custom';
+    from_date?: string;
+    to_date?: string;
+  }) => Promise<Order[]>;
 };
 
+type AdminDateFilterValue = 'unset' | 'last_week' | 'last_month' | 'custom';
+
 export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdminOrders }: OrdersManagerProps) {
+  const [dateFilter, setDateFilter] = useState<AdminDateFilterValue>('unset');
+  /** Bumps on Clear so Radix Select remounts and shows the placeholder again. */
+  const [dateFilterSelectKey, setDateFilterSelectKey] = useState(0);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [couponCode, setCouponCode] = useState('');
@@ -984,30 +998,34 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
     }
   };
 
+  const buildFilters = () => ({
+    phone: phone.trim() || undefined,
+    email: email.trim() || undefined,
+    coupon_code: couponCode.trim() || undefined,
+    date_filter: dateFilter === 'unset' ? undefined : dateFilter,
+    from_date: dateFilter === 'custom' ? (fromDate || undefined) : undefined,
+    to_date: dateFilter === 'custom' ? (toDate || undefined) : undefined,
+  });
+
   const refreshWithCurrentFilters = async () => {
-    const p = phone.trim();
-    const e = email.trim();
-    const c = couponCode.trim();
-    if (p || e || c) {
-      const list = await fetchAdminOrders({
-        phone: p || undefined,
-        email: e || undefined,
-        coupon_code: c || undefined,
-      });
-      setDisplayOrders(list);
-    } else {
-      setDisplayOrders(null);
-    }
+    const list = await fetchAdminOrders(buildFilters());
+    setDisplayOrders(list);
   };
 
   const handleSearch = async () => {
+    if (dateFilter === 'custom') {
+      if (!fromDate || !toDate) {
+        toast.error('Please select both from and to dates for custom filter');
+        return;
+      }
+      if (fromDate > toDate) {
+        toast.error('From date cannot be after to date');
+        return;
+      }
+    }
     setSearching(true);
     try {
-      const list = await fetchAdminOrders({
-        phone: phone.trim() || undefined,
-        email: email.trim() || undefined,
-        coupon_code: couponCode.trim() || undefined,
-      });
+      const list = await fetchAdminOrders(buildFilters());
       setDisplayOrders(list);
     } catch {
       toast.error('Failed to load orders');
@@ -1020,6 +1038,10 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
     setPhone('');
     setEmail('');
     setCouponCode('');
+    setDateFilter('unset');
+    setDateFilterSelectKey((k) => k + 1);
+    setFromDate('');
+    setToDate('');
     setDisplayOrders(null);
   };
 
@@ -1084,10 +1106,10 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
 
       <CardHeader>
         <CardTitle>Order history</CardTitle>
-        <p className="text-sm text-gray-600 font-normal">Search by phone, email, or coupon code (combined with AND).</p>
+        <p className="text-sm text-gray-600 font-normal">With no date option selected, the list shows the last 3 days. Or choose last week, last month, or a custom range. Search by phone, email, or coupon code (combined with AND).</p>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <Label htmlFor="admin-order-phone">Phone</Label>
             <Input
@@ -1119,7 +1141,48 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
               className="mt-1"
             />
           </div>
+          <div>
+            <Label htmlFor="admin-order-date-filter">Date filter</Label>
+            <Select
+              key={dateFilterSelectKey}
+              value={dateFilter === 'unset' ? undefined : dateFilter}
+              onValueChange={(value: 'last_week' | 'last_month' | 'custom') => setDateFilter(value)}
+            >
+              <SelectTrigger id="admin-order-date-filter" className="mt-1">
+                <SelectValue placeholder="Select option" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="last_week">Last week</SelectItem>
+                <SelectItem value="last_month">Last month</SelectItem>
+                <SelectItem value="custom">Custom date</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+        {dateFilter === 'custom' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="admin-order-from-date">From</Label>
+              <Input
+                id="admin-order-from-date"
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="admin-order-to-date">To</Label>
+              <Input
+                id="admin-order-to-date"
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           <Button type="button" onClick={handleSearch} disabled={searching}>
             {searching ? 'Searching…' : 'Search'}

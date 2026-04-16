@@ -6,10 +6,22 @@ import { useApp } from '../context/AppContext';
 import { Offer } from '../types';
 import { spendGetFreeSliderBadge } from '../lib/spendOfferDisplay';
 import { computeStoreFrontBadges } from '../lib/storeHours';
+import { usePageMeta } from '../hooks/usePageMeta';
 import { Clock, MapPin, Phone, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export function HomePage() {
+  usePageMeta(
+    'Home',
+    'Discover Pizza Offers — featured deals on the home slider, store hours, and quick links to order online.'
+  );
+
   const { categories, locations, offers, ensureHomePageLoaded } = useApp();
+  const toCategorySlug = (name: string) =>
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
   const [activeSlide, setActiveSlide] = useState(0);
   const [storeClock, setStoreClock] = useState(() => new Date());
   const primaryLocation = locations[0];
@@ -145,7 +157,7 @@ export function HomePage() {
                 Order your favorite meals online with customizable options
               </p>
               <div className="mt-7 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-                <Link to="/menu">
+                <Link to="/popularpizza-menu">
                   <Button size="lg" className="bg-orange-600 hover:bg-orange-700 text-base px-7">
                     Order Now
                   </Button>
@@ -174,7 +186,7 @@ export function HomePage() {
                 <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Today&apos;s Offers</h2>
                 <p className="text-sm md:text-base text-gray-600">Limited-time deals curated by our team.</p>
               </div>
-              <Link to="/offers" className="shrink-0">
+              <Link to="/popularpizza-offers" className="shrink-0">
                 <Button variant="outline" size="sm" className="md:size-default">View All Offers</Button>
               </Link>
             </div>
@@ -201,10 +213,10 @@ export function HomePage() {
                         <h3 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">{offer.title}</h3>
                         <p className="mt-2 text-sm sm:text-base text-gray-600 line-clamp-3">{offer.description}</p>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <Link to="/offers">
+                          <Link to="/popularpizza-offers">
                             <Button className="bg-orange-600 hover:bg-orange-700">See Details</Button>
                           </Link>
-                          <Link to="/menu">
+                          <Link to="/popularpizza-menu">
                             <Button variant="outline">Order Now</Button>
                           </Link>
                         </div>
@@ -258,7 +270,7 @@ export function HomePage() {
           <h2 className="text-4xl font-bold text-center mb-12">Our Menu Categories</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
             {categories.slice(0, 5).map((category) => (
-              <Link key={category.id} to={`/menu?category=${category.id}`}>
+              <Link key={category.id} to={`/popularpizza-menu/category/${toCategorySlug(category.name)}`}>
                 <Card className="hover:shadow-lg transition-shadow cursor-pointer">
                   <CardContent className="p-6 text-center">
                     <div className="text-4xl mb-4">
@@ -275,7 +287,7 @@ export function HomePage() {
             ))}
           </div>
           <div className="text-center mt-8">
-            <Link to="/menu">
+            <Link to="/popularpizza-menu">
               <Button variant="outline" size="lg">View Full Menu</Button>
             </Link>
           </div>
@@ -316,7 +328,7 @@ export function HomePage() {
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-4xl font-bold mb-4">Ready to Order?</h2>
           <p className="text-xl mb-8">Browse our menu and customize your meal</p>
-          <Link to="/menu">
+          <Link to="/popularpizza-menu">
             <Button size="lg" variant="secondary" className="text-lg px-8">
               Start Your Order
             </Button>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
 import { CheckCircle2, MapPin, Package, Clock } from 'lucide-react';
+import { usePageMeta } from '../hooks/usePageMeta';
 
 export function OrderConfirmationPage() {
   const { orderId } = useParams();
@@ -15,12 +16,18 @@ export function OrderConfirmationPage() {
   }, []);
 
   const order = orders.find(o => o.id === orderId);
+  usePageMeta(
+    order ? `Order #${order.id}` : 'Order confirmation',
+    order
+      ? `Your Pizza Offers order #${order.id} is confirmed. Thank you — we will prepare it shortly.`
+      : 'View your order confirmation number and details, or return to the menu to place an order.'
+  );
 
   if (!order) {
     return (
       <div className="container mx-auto px-4 py-16 text-center">
         <h1 className="text-2xl font-bold">Order not found</h1>
-        <Link to="/menu">
+        <Link to="/popularpizza-menu">
           <Button className="mt-4">Back to Menu</Button>
         </Link>
       </div>
@@ -163,7 +170,7 @@ export function OrderConfirmationPage() {
       </Card>
 
       <div className="flex gap-4">
-        <Link to="/menu" className="flex-1">
+        <Link to="/popularpizza-menu" className="flex-1">
           <Button variant="outline" className="w-full">Order Again</Button>
         </Link>
         <Link to="/dashboard" className="flex-1">

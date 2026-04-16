@@ -18,8 +18,14 @@ import {
   cartNetItemsSubtotal,
   cartTotalOfferDiscountDollars,
 } from '../lib/cartPricing';
+import { usePageMeta } from '../hooks/usePageMeta';
 
 export function CheckoutPage() {
+  usePageMeta(
+    'Checkout',
+    'Complete your Pizza Offers order — pickup or delivery, contact details, coupons, and payment summary.'
+  );
+
   const navigate = useNavigate();
   const {
     cart,

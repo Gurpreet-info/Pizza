@@ -4,8 +4,15 @@ import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Offer } from '../types';
 import { spendGetFreeRuleSummary } from '../lib/spendOfferDisplay';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { HomePageBanner } from '../components/HomePageBanner';
 
 export function OffersPage() {
+  usePageMeta(
+    'Offers',
+    'Explore current Pizza Offers promotions — discounts, BOGO deals, and spend-based rewards on menu favourites.'
+  );
+
   const { offers, menuItems, ensureOffersMarketingLoaded } = useApp();
 
   useEffect(() => {
@@ -61,8 +68,13 @@ export function OffersPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-6xl mx-auto">
+    <div>
+      <HomePageBanner
+        title="Today’s Special Offers"
+        subtitle="Discover fresh discounts, BOGO deals, and spend rewards available right now."
+      />
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-6xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-4">Special Offers</h1>
           <p className="text-gray-600">Check out our amazing deals and save on your favorite items!</p>
@@ -150,6 +162,7 @@ export function OffersPage() {
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

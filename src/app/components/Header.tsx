@@ -27,7 +27,7 @@ export function Header() {
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         <Link to="/" className="flex items-center space-x-2">
           <div className="text-2xl font-bold text-orange-600">
-            🍕 Delicious Bites
+            🍕 Pizza Offers
           </div>
         </Link>
 
@@ -35,16 +35,16 @@ export function Header() {
           <Link to="/" className="text-sm font-medium hover:text-orange-600 transition-colors">
             Home
           </Link>
-          <Link to="/menu" className="text-sm font-medium hover:text-orange-600 transition-colors">
+          <Link to="/popularpizza-menu" className="text-sm font-medium hover:text-orange-600 transition-colors">
             Menu
           </Link>
           <Link to="/locations" className="text-sm font-medium hover:text-orange-600 transition-colors">
             Locations
           </Link>
-          <Link to="/offers" className="text-sm font-medium hover:text-orange-600 transition-colors">
+          <Link to="/popularpizza-offers" className="text-sm font-medium hover:text-orange-600 transition-colors">
             Offers
           </Link>
-          <Link to="/coupons" className="text-sm font-medium hover:text-orange-600 transition-colors">
+          <Link to="/popularpizza-coupons" className="text-sm font-medium hover:text-orange-600 transition-colors">
             Coupons
           </Link>
           {user?.isAdmin && (
@@ -120,7 +120,7 @@ export function Header() {
                 </SheetClose>
                 <SheetClose asChild>
                   <Link
-                    to="/menu"
+                    to="/popularpizza-menu"
                     className="text-lg font-medium hover:text-orange-600 transition-colors py-2"
                   >
                     Menu
@@ -136,7 +136,7 @@ export function Header() {
                 </SheetClose>
                 <SheetClose asChild>
                   <Link
-                    to="/offers"
+                    to="/popularpizza-offers"
                     className="text-lg font-medium hover:text-orange-600 transition-colors py-2"
                   >
                     Offers
@@ -144,7 +144,7 @@ export function Header() {
                 </SheetClose>
                 <SheetClose asChild>
                   <Link
-                    to="/coupons"
+                    to="/popularpizza-coupons"
                     className="text-lg font-medium hover:text-orange-600 transition-colors py-2"
                   >
                     Coupons

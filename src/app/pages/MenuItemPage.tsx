@@ -10,6 +10,7 @@ import { Textarea } from '../components/ui/textarea';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { toast } from 'sonner';
 import { CartItem, SelectedOption, Option } from '../types';
+import { usePageMeta } from '../hooks/usePageMeta';
 import { Minus, Plus } from 'lucide-react';
 
 export function MenuItemPage() {
@@ -22,6 +23,12 @@ export function MenuItemPage() {
   }, []);
 
   const menuItem = menuItems.find(item => item.id === id);
+  const metaDescription = menuItem
+    ? (menuItem.description?.trim() ||
+        `Customize ${menuItem.name} with options and add it to your cart at Pizza Offers.`)
+    : 'This menu item could not be found. Browse the full menu and order online at Pizza Offers.';
+  usePageMeta(menuItem ? menuItem.name : 'Menu item', metaDescription);
+
   const itemOptionGroups = optionGroups.filter(og => og.menuItemId === id);
   
   const [selectedOptions, setSelectedOptions] = useState<SelectedOption[]>([]);
@@ -62,7 +69,7 @@ export function MenuItemPage() {
     return (
       <div className="container mx-auto px-4 py-8 text-center">
         <h1 className="text-2xl font-bold">Item not found</h1>
-        <Button onClick={() => navigate('/menu')} className="mt-4">
+        <Button onClick={() => navigate('/popularpizza-menu')} className="mt-4">
           Back to Menu
         </Button>
       </div>
