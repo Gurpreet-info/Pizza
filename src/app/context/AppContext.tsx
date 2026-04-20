@@ -163,7 +163,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     email: raw.email,
     name: raw.name,
     phone: raw.phone || '',
+    role: raw.role === 'admin' || raw.role === 'manager' ? raw.role : 'user',
     isAdmin: raw.role === 'admin',
+    isManager: raw.role === 'manager',
     phoneVerifiedAt: raw.phone_verified_at ?? null,
   });
 
@@ -399,6 +401,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const token = getToken();
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
         ...(options.headers as Record<string, string> || {}),
       };
       if (token) headers.Authorization = `Bearer ${token}`;

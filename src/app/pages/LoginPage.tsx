@@ -20,7 +20,7 @@ export function LoginPage() {
 
   useEffect(() => {
     if (!user) return;
-    navigate(user.isAdmin ? '/admin' : '/dashboard', { replace: true });
+    navigate(user.role === 'admin' || user.role === 'manager' ? '/admin' : '/dashboard', { replace: true });
   }, [user, navigate]);
 
   // Login state

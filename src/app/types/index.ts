@@ -153,6 +153,8 @@ export interface User {
   email: string;
   name: string;
   phone: string;
+  role: 'admin' | 'manager' | 'user';
   isAdmin: boolean;
+  isManager: boolean;
   phoneVerifiedAt?: string | null;
 }

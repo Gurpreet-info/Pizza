@@ -19,6 +19,7 @@ import {
 
 export function Header() {
   const { cart, user, logout } = useApp();
+  const canAccessAdmin = user?.role === 'admin' || user?.role === 'manager';
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
@@ -47,7 +48,7 @@ export function Header() {
           <Link to="/popularpizza-coupons" className="text-sm font-medium hover:text-orange-600 transition-colors">
             Coupons
           </Link>
-          {user?.isAdmin && (
+          {canAccessAdmin && (
             <Link to="/admin" className="text-sm font-medium hover:text-orange-600 transition-colors">
               Admin Panel
             </Link>
@@ -81,7 +82,7 @@ export function Header() {
                 <DropdownMenuItem asChild>
                   <Link to="/dashboard">My Orders</Link>
                 </DropdownMenuItem>
-                {user.isAdmin && (
+                {canAccessAdmin && (
                   <DropdownMenuItem asChild>
                     <Link to="/admin">Admin Panel</Link>
                   </DropdownMenuItem>
@@ -165,7 +166,7 @@ export function Header() {
                           My Orders
                         </Link>
                       </SheetClose>
-                      {user.isAdmin && (
+                      {canAccessAdmin && (
                         <SheetClose asChild>
                           <Link
                             to="/admin"

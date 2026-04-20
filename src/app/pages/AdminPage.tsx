@@ -23,10 +23,27 @@ import { usePageMeta } from '../hooks/usePageMeta';
 
 const ADMIN_ORDER_ACK_KEY = 'pizza_admin_orders_last_ack_id';
 
+type AdminUserRecord = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: 'admin' | 'manager' | 'user';
+  createdAt: string;
+};
+
 function maxNumericOrderId(orderList: Order[]): number {
   if (!orderList.length) return 0;
   return Math.max(...orderList.map((o) => Number(o.id) || 0));
 }
+
+type UserFormData = {
+  name: string;
+  email: string;
+  phone: string;
+  role: 'admin' | 'manager' | 'user';
+  password: string;
+};
 
 export function AdminPage() {
   usePageMeta(
@@ -51,12 +68,39 @@ export function AdminPage() {
     updateOrderStatus,
     refreshAdminOrdersList,
     ensureAdminWorkspaceLoaded,
+    apiRequest,
   } = useApp();
 
+  const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
+
+  const loadAdminUsers = useCallback(async () => {
+    const list = (await apiRequest('/users', {}, { silent: true })) as any[];
+    const mapped = (list || []).map((u) => ({
+      id: String(u.id),
+      name: String(u.name ?? ''),
+      email: String(u.email ?? ''),
+      phone: u.phone != null ? String(u.phone) : null,
+      role: (u.role === 'admin' || u.role === 'manager' ? u.role : 'user') as
+        | 'admin'
+        | 'manager'
+        | 'user',
+      createdAt: String(u.created_at ?? ''),
+    }));
+    setAdminUsers(mapped);
+  }, [apiRequest]);
+
+  const canAccessAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const isAdminOnly = user?.role === 'admin';
+
   useEffect(() => {
-    if (!user?.isAdmin) return;
+    if (!canAccessAdmin) return;
     void ensureAdminWorkspaceLoaded();
-  }, [user?.isAdmin]);
+    if (isAdminOnly) {
+      void loadAdminUsers();
+    } else {
+      setAdminUsers([]);
+    }
+  }, [canAccessAdmin, isAdminOnly]);
 
   const [adminTab, setAdminTab] = useState('dashboard');
   const [lastAckOrderId, setLastAckOrderId] = useState(() => {
@@ -154,29 +198,29 @@ export function AdminPage() {
   }, [stopOrderAlertPlayback]);
 
   useEffect(() => {
-    if (!user?.isAdmin) {
+    if (!canAccessAdmin) {
       navigate('/');
     }
-  }, [user, navigate]);
+  }, [canAccessAdmin, navigate]);
 
   useEffect(() => {
-    if (!user?.isAdmin) return;
+    if (!canAccessAdmin) return;
     const raw = sessionStorage.getItem(ADMIN_ORDER_ACK_KEY);
     if (raw !== null) setLastAckOrderId(parseInt(raw, 10) || 0);
-  }, [user?.isAdmin]);
+  }, [canAccessAdmin]);
 
   /** First visit: no key yet — treat current orders as baseline so the badge is not flooded. */
   useEffect(() => {
-    if (!user?.isAdmin || orders.length === 0) return;
+    if (!canAccessAdmin || orders.length === 0) return;
     if (sessionStorage.getItem(ADMIN_ORDER_ACK_KEY) === null) {
       const m = maxNumericOrderId(orders);
       sessionStorage.setItem(ADMIN_ORDER_ACK_KEY, String(m));
       setLastAckOrderId(m);
     }
-  }, [user?.isAdmin, orders]);
+  }, [canAccessAdmin, orders]);
 
   useEffect(() => {
-    if (!user?.isAdmin) return;
+    if (!canAccessAdmin) return;
     const tick = () => {
       void pollRef.current();
     };
@@ -189,10 +233,10 @@ export function AdminPage() {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [user?.isAdmin]);
+  }, [canAccessAdmin]);
 
   useEffect(() => {
-    if (!user?.isAdmin) {
+    if (!canAccessAdmin) {
       ordersAlertBaselineDoneRef.current = false;
       knownOrderIdsRef.current.clear();
       ordersNeedingVoiceAlertRef.current.clear();
@@ -233,7 +277,7 @@ export function AdminPage() {
     if (spokeForNew) {
       queueMicrotask(() => startOrderAlertLoopIfNeeded());
     }
-  }, [user?.isAdmin, orders, stopOrderAlertPlayback, startOrderAlertLoopIfNeeded]);
+  }, [canAccessAdmin, orders, stopOrderAlertPlayback, startOrderAlertLoopIfNeeded]);
 
   useEffect(() => {
     return () => {
@@ -252,6 +296,54 @@ export function AdminPage() {
     setLastAckOrderId(m);
   };
 
+  const addAdminUser = async (payload: {
+    name: string;
+    email: string;
+    phone?: string;
+    role: 'admin' | 'manager' | 'user';
+    password: string;
+  }) => {
+    await apiRequest('/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: payload.name,
+        email: payload.email,
+        phone: payload.phone?.trim() ? payload.phone.trim() : null,
+        role: payload.role,
+        password: payload.password,
+      }),
+    });
+    await loadAdminUsers();
+  };
+
+  const updateAdminUser = async (
+    userId: string,
+    payload: {
+      name: string;
+      email: string;
+      phone?: string;
+      role: 'admin' | 'manager' | 'user';
+      password?: string;
+    }
+  ) => {
+    await apiRequest(`/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: payload.name,
+        email: payload.email,
+        phone: payload.phone?.trim() ? payload.phone.trim() : null,
+        role: payload.role,
+        password: payload.password?.trim() ? payload.password : undefined,
+      }),
+    });
+    await loadAdminUsers();
+  };
+
+  const deleteAdminUser = async (userId: string) => {
+    await apiRequest(`/users/${userId}`, { method: 'DELETE' });
+    await loadAdminUsers();
+  };
+
   const onAdminTabChange = (value: string) => {
     setAdminTab(value);
     if (value === 'orders') {
@@ -259,7 +351,7 @@ export function AdminPage() {
     }
   };
 
-  if (!user?.isAdmin) {
+  if (!canAccessAdmin) {
     return null;
   }
 
@@ -289,11 +381,12 @@ export function AdminPage() {
           </TabsTrigger>
           <TabsTrigger value="coupons">Coupons</TabsTrigger>
           <TabsTrigger value="offers">Offers</TabsTrigger>
+          {isAdminOnly ? <TabsTrigger value="users">Users</TabsTrigger> : null}
         </TabsList>
 
         {/* Dashboard Tab */}
         <TabsContent value="dashboard">
-          <DashboardStats orders={orders} />
+          <DashboardStats apiRequest={apiRequest} isAdmin={isAdminOnly} />
         </TabsContent>
 
         {/* Menu Items Tab */}
@@ -380,65 +473,173 @@ export function AdminPage() {
             deleteOffer={deleteOffer}
           />
         </TabsContent>
+
+        {isAdminOnly ? (
+          <TabsContent value="users">
+            <UsersManager
+              users={adminUsers}
+              currentUserId={user.id}
+              addUser={addAdminUser}
+              updateUser={updateAdminUser}
+              deleteUser={deleteAdminUser}
+            />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );
 }
 
 // Dashboard Stats Component
-function DashboardStats({ orders }: any) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+type DashboardStatsPayload = {
+  scope_role: 'admin' | 'manager';
+  period_filter: 'today' | 'last_week' | 'last_month' | 'custom';
+  period_label: string;
+  overview: {
+    total_orders: number;
+    completed_orders: number;
+    preparing_orders: number;
+    pending_orders: number;
+  };
+  today: {
+    orders: number;
+    sales_without_tax: number;
+    sales_with_tax: number;
+    date_label: string;
+  };
+  period: {
+    orders: number;
+    sales_without_tax: number;
+    sales_with_tax: number;
+  };
+};
 
-  // Calculate daily orders (today)
-  const dailyOrders = orders.filter((order: any) => {
-    const orderDate = new Date(order.createdAt);
-    const orderDay = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
-    return orderDay.getTime() === today.getTime();
-  });
+function DashboardStats({
+  apiRequest,
+  isAdmin,
+}: {
+  apiRequest: (path: string, options?: RequestInit, meta?: { silent?: boolean }) => Promise<unknown>;
+  isAdmin: boolean;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState<DashboardStatsPayload | null>(null);
+  const [dateFilter, setDateFilter] = useState<'today' | 'last_week' | 'last_month' | 'custom'>('today');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const showPeriodCard = isAdmin || stats?.period_filter !== 'today';
 
-  // Calculate monthly orders (current month)
-  const monthlyOrders = orders.filter((order: any) => {
-    const orderDate = new Date(order.createdAt);
-    return orderDate >= firstDayOfMonth;
-  });
+  const loadStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (isAdmin) {
+        if (dateFilter === 'last_week' || dateFilter === 'last_month') {
+          params.set('date_filter', dateFilter);
+        } else if (dateFilter === 'custom') {
+          if (!fromDate || !toDate) {
+            toast.error('Please select both from and to dates for custom filter');
+            setLoading(false);
+            return;
+          }
+          if (fromDate > toDate) {
+            toast.error('From date cannot be after to date');
+            setLoading(false);
+            return;
+          }
+          params.set('date_filter', 'custom');
+          params.set('from_date', fromDate);
+          params.set('to_date', toDate);
+        }
+      }
+      const qs = params.toString();
+      const path = qs ? `/orders/dashboard-stats?${qs}` : '/orders/dashboard-stats';
+      const payload = (await apiRequest(path, {}, { silent: true })) as DashboardStatsPayload;
+      setStats(payload);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load dashboard stats');
+    } finally {
+      setLoading(false);
+    }
+  }, [apiRequest, isAdmin, dateFilter, fromDate, toDate]);
 
-  // Calculate total sales without tax (all time)
-  const totalSalesWithoutTax = orders.reduce((sum: number, order: any) => {
-    return sum + order.subtotal;
-  }, 0);
+  useEffect(() => {
+    void loadStats();
+  }, []);
 
-  // Calculate total sales with tax (all time)
-  const totalSalesWithTax = orders.reduce((sum: number, order: any) => {
-    return sum + order.total;
-  }, 0);
-
-  // Calculate daily sales
-  const dailySalesWithoutTax = dailyOrders.reduce((sum: number, order: any) => {
-    return sum + order.subtotal;
-  }, 0);
-
-  const dailySalesWithTax = dailyOrders.reduce((sum: number, order: any) => {
-    return sum + order.total;
-  }, 0);
-
-  // Calculate monthly sales
-  const monthlySalesWithoutTax = monthlyOrders.reduce((sum: number, order: any) => {
-    return sum + order.subtotal;
-  }, 0);
-
-  const monthlySalesWithTax = monthlyOrders.reduce((sum: number, order: any) => {
-    return sum + order.total;
-  }, 0);
-
-  // Order status counts
-  const pendingOrders = orders.filter((order: any) => order.status === 'pending').length;
-  const preparingOrders = orders.filter((order: any) => order.status === 'preparing').length;
-  const completedOrders = orders.filter((order: any) => order.status === 'completed').length;
+  if (!stats) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center text-gray-500">
+          {loading ? 'Loading dashboard statistics…' : 'No dashboard data available.'}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {isAdmin ? (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div>
+                <Label htmlFor="dashboard-date-filter">Date filter</Label>
+                <Select
+                  value={dateFilter}
+                  onValueChange={(value: 'today' | 'last_week' | 'last_month' | 'custom') =>
+                    setDateFilter(value)
+                  }
+                >
+                  <SelectTrigger id="dashboard-date-filter" className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="last_week">Last week</SelectItem>
+                    <SelectItem value="last_month">Last month</SelectItem>
+                    <SelectItem value="custom">Custom date</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {dateFilter === 'custom' ? (
+                <>
+                  <div>
+                    <Label htmlFor="dashboard-from-date">From</Label>
+                    <Input
+                      id="dashboard-from-date"
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="dashboard-to-date">To</Label>
+                    <Input
+                      id="dashboard-to-date"
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div />
+                  <div />
+                </>
+              )}
+            </div>
+            <div className="mt-4">
+              <Button onClick={() => void loadStats()} disabled={loading}>
+                {loading ? 'Loading…' : 'Apply Filter'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Overview Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
@@ -446,7 +647,7 @@ function DashboardStats({ orders }: any) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-100 text-sm font-medium">Total Orders</p>
-                <p className="text-3xl font-bold mt-2">{orders.length}</p>
+                <p className="text-3xl font-bold mt-2">{stats.overview.total_orders}</p>
               </div>
               <div className="bg-blue-400 bg-opacity-30 p-3 rounded-lg">
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -462,7 +663,7 @@ function DashboardStats({ orders }: any) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-sm font-medium">Completed</p>
-                <p className="text-3xl font-bold mt-2">{completedOrders}</p>
+                <p className="text-3xl font-bold mt-2">{stats.overview.completed_orders}</p>
               </div>
               <div className="bg-green-400 bg-opacity-30 p-3 rounded-lg">
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -478,7 +679,7 @@ function DashboardStats({ orders }: any) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-orange-100 text-sm font-medium">Preparing</p>
-                <p className="text-3xl font-bold mt-2">{preparingOrders}</p>
+                <p className="text-3xl font-bold mt-2">{stats.overview.preparing_orders}</p>
               </div>
               <div className="bg-orange-400 bg-opacity-30 p-3 rounded-lg">
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -494,7 +695,7 @@ function DashboardStats({ orders }: any) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-yellow-100 text-sm font-medium">Pending</p>
-                <p className="text-3xl font-bold mt-2">{pendingOrders}</p>
+                <p className="text-3xl font-bold mt-2">{stats.overview.pending_orders}</p>
               </div>
               <div className="bg-yellow-400 bg-opacity-30 p-3 rounded-lg">
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -520,80 +721,358 @@ function DashboardStats({ orders }: any) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="border-l-4 border-blue-500 pl-4">
               <p className="text-sm text-gray-600 font-medium mb-1">Daily Orders</p>
-              <p className="text-3xl font-bold text-gray-900">{dailyOrders.length}</p>
-              <p className="text-xs text-gray-500 mt-1">{today.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.today.orders}</p>
+              <p className="text-xs text-gray-500 mt-1">{stats.today.date_label}</p>
             </div>
             <div className="border-l-4 border-green-500 pl-4">
               <p className="text-sm text-gray-600 font-medium mb-1">Sales (Without Tax)</p>
-              <p className="text-3xl font-bold text-green-600">${dailySalesWithoutTax.toFixed(2)}</p>
+              <p className="text-3xl font-bold text-green-600">${stats.today.sales_without_tax.toFixed(2)}</p>
               <p className="text-xs text-gray-500 mt-1">Subtotal only</p>
             </div>
             <div className="border-l-4 border-emerald-500 pl-4">
               <p className="text-sm text-gray-600 font-medium mb-1">Sales (With Tax)</p>
-              <p className="text-3xl font-bold text-emerald-600">${dailySalesWithTax.toFixed(2)}</p>
+              <p className="text-3xl font-bold text-emerald-600">${stats.today.sales_with_tax.toFixed(2)}</p>
               <p className="text-xs text-gray-500 mt-1">Total including tax</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Monthly Statistics */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            This Month's Statistics
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="border-l-4 border-purple-500 pl-4">
-              <p className="text-sm text-gray-600 font-medium mb-1">Monthly Orders</p>
-              <p className="text-3xl font-bold text-gray-900">{monthlyOrders.length}</p>
-              <p className="text-xs text-gray-500 mt-1">{now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+      {showPeriodCard ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              {stats.period_label}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="border-l-4 border-purple-500 pl-4">
+                <p className="text-sm text-gray-600 font-medium mb-1">Orders</p>
+                <p className="text-3xl font-bold text-gray-900">{stats.period.orders}</p>
+                <p className="text-xs text-gray-500 mt-1">{stats.period_label}</p>
+              </div>
+              <div className="border-l-4 border-indigo-500 pl-4">
+                <p className="text-sm text-gray-600 font-medium mb-1">Sales (Without Tax)</p>
+                <p className="text-3xl font-bold text-indigo-600">${stats.period.sales_without_tax.toFixed(2)}</p>
+                <p className="text-xs text-gray-500 mt-1">Subtotal only</p>
+              </div>
+              <div className="border-l-4 border-blue-500 pl-4">
+                <p className="text-sm text-gray-600 font-medium mb-1">Sales (With Tax)</p>
+                <p className="text-3xl font-bold text-blue-600">${stats.period.sales_with_tax.toFixed(2)}</p>
+                <p className="text-xs text-gray-500 mt-1">Total including tax</p>
+              </div>
             </div>
-            <div className="border-l-4 border-indigo-500 pl-4">
-              <p className="text-sm text-gray-600 font-medium mb-1">Sales (Without Tax)</p>
-              <p className="text-3xl font-bold text-indigo-600">${monthlySalesWithoutTax.toFixed(2)}</p>
-              <p className="text-xs text-gray-500 mt-1">Subtotal only</p>
-            </div>
-            <div className="border-l-4 border-blue-500 pl-4">
-              <p className="text-sm text-gray-600 font-medium mb-1">Sales (With Tax)</p>
-              <p className="text-3xl font-bold text-blue-600">${monthlySalesWithTax.toFixed(2)}</p>
-              <p className="text-xs text-gray-500 mt-1">Total including tax</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : null}
 
-      {/* All Time Statistics */}
+      {/* Summary Statistics */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            All Time Statistics
+            Summary Statistics
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-gradient-to-br from-pink-50 to-rose-50 p-6 rounded-lg border border-pink-200">
-              <p className="text-sm text-gray-600 font-medium mb-2">Total Sales (Without Tax)</p>
-              <p className="text-4xl font-bold text-pink-600 mb-1">${totalSalesWithoutTax.toFixed(2)}</p>
-              <p className="text-xs text-gray-500">Subtotal from all orders</p>
+              <p className="text-sm text-gray-600 font-medium mb-2">Today's Sales (Without Tax)</p>
+              <p className="text-4xl font-bold text-pink-600 mb-1">${stats.today.sales_without_tax.toFixed(2)}</p>
+              <p className="text-xs text-gray-500">Today subtotal</p>
             </div>
             <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-6 rounded-lg border border-emerald-200">
-              <p className="text-sm text-gray-600 font-medium mb-2">Total Sales (With Tax)</p>
-              <p className="text-4xl font-bold text-emerald-600 mb-1">${totalSalesWithTax.toFixed(2)}</p>
-              <p className="text-xs text-gray-500">Total revenue including tax</p>
+              <p className="text-sm text-gray-600 font-medium mb-2">{stats.period_label} Sales (With Tax)</p>
+              <p className="text-4xl font-bold text-emerald-600 mb-1">${stats.period.sales_with_tax.toFixed(2)}</p>
+              <p className="text-xs text-gray-500">Selected period total</p>
             </div>
           </div>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function UsersManager({
+  users,
+  currentUserId,
+  addUser,
+  updateUser,
+  deleteUser,
+}: {
+  users: AdminUserRecord[];
+  currentUserId: string;
+  addUser: (payload: UserFormData) => Promise<void>;
+  updateUser: (userId: string, payload: UserFormData) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingUser, setEditingUser] = useState<AdminUserRecord | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'manager' | 'user'>('all');
+  const [formData, setFormData] = useState<UserFormData>({
+    name: '',
+    email: '',
+    phone: '',
+    role: 'user',
+    password: '',
+  });
+
+  const resetForm = () => {
+    setEditingUser(null);
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      role: 'user',
+      password: '',
+    });
+  };
+
+  const onOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (!open) resetForm();
+  };
+
+  const handleEdit = (u: AdminUserRecord) => {
+    setEditingUser(u);
+    setFormData({
+      name: u.name,
+      email: u.email,
+      phone: u.phone ?? '',
+      role: u.role,
+      password: '',
+    });
+    setIsOpen(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser && !formData.password.trim()) {
+      toast.error('Password is required for new users');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (editingUser) {
+        await updateUser(editingUser.id, formData);
+        toast.success('User updated');
+      } else {
+        await addUser(formData);
+        toast.success('User created');
+      }
+      setIsOpen(false);
+      resetForm();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save user');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+    try {
+      await deleteUser(id);
+      toast.success('User deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete user');
+    }
+  };
+
+  const filteredUsers = users.filter((u) => {
+    const roleOk = roleFilter === 'all' ? true : u.role === roleFilter;
+    if (!roleOk) return false;
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      (u.phone ?? '').toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Users</CardTitle>
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Add User
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingUser ? 'Edit User' : 'Add User'}</DialogTitle>
+              <DialogDescription>
+                {editingUser
+                  ? 'Update user details and role.'
+                  : 'Create a new admin, manager, or standard user account.'}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit}>
+              <div className="grid gap-4 py-4">
+                <div>
+                  <Label htmlFor="user-name">Name *</Label>
+                  <Input
+                    id="user-name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="user-email">Email *</Label>
+                  <Input
+                    id="user-email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="user-phone">Phone</Label>
+                  <Input
+                    id="user-phone"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="user-role">Role *</Label>
+                  <Select
+                    value={formData.role}
+                    onValueChange={(value: 'admin' | 'manager' | 'user') =>
+                      setFormData({ ...formData, role: value })
+                    }
+                  >
+                    <SelectTrigger id="user-role">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="user">User</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="user-password">
+                    {editingUser ? 'Password (leave blank to keep current)' : 'Password *'}
+                  </Label>
+                  <Input
+                    id="user-password"
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required={!editingUser}
+                    minLength={6}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Saving…' : editingUser ? 'Update User' : 'Create User'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <Label htmlFor="users-search">Search users</Label>
+            <Input
+              id="users-search"
+              placeholder="Search by name, email, or phone"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="users-role-filter">Role filter</Label>
+            <Select
+              value={roleFilter}
+              onValueChange={(value: 'all' | 'admin' | 'manager' | 'user') => setRoleFilter(value)}
+            >
+              <SelectTrigger id="users-role-filter" className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All roles</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="user">User</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredUsers.map((u) => (
+              <TableRow key={u.id}>
+                <TableCell className="font-medium">{u.name}</TableCell>
+                <TableCell>{u.email}</TableCell>
+                <TableCell>{u.phone || '—'}</TableCell>
+                <TableCell>
+                  <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="capitalize">
+                    {u.role}
+                  </Badge>
+                </TableCell>
+                <TableCell>{u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-CA') : '—'}</TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="icon" onClick={() => handleEdit(u)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(u.id)}
+                      disabled={u.id === currentUserId}
+                      title={u.id === currentUserId ? 'You cannot delete your own account' : 'Delete user'}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {filteredUsers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-gray-500">
+                  No users found for the current search/filter.
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
