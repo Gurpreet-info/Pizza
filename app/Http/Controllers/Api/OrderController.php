@@ -95,6 +95,97 @@ class OrderController extends Controller
         return response()->json($query->get());
     }
 
+    public function dashboardStats(Request $request): JsonResponse
+    {
+        $request->validate([
+            'date_filter' => ['sometimes', 'nullable', Rule::in(['last_week', 'last_month', 'custom'])],
+            'from_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'to_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+        ]);
+
+        $user = $request->user();
+        $isManager = $user?->role === 'manager';
+
+        $periodQuery = Order::query();
+        $todayStart = now()->startOfDay();
+        $todayEnd = now()->endOfDay();
+
+        $periodLabel = "Today's Statistics";
+        $periodFilter = 'today';
+
+        if ($isManager) {
+            $periodQuery->whereBetween('created_at', [$todayStart, $todayEnd]);
+        } else {
+            $dateFilter = $request->query('date_filter');
+            $dateFilter = is_string($dateFilter) ? trim($dateFilter) : '';
+
+            if ($dateFilter === 'last_week') {
+                $periodFilter = 'last_week';
+                $periodLabel = 'Last 7 Days';
+                $periodQuery->where('created_at', '>=', now()->subDays(7));
+            } elseif ($dateFilter === 'last_month') {
+                $periodFilter = 'last_month';
+                $periodLabel = 'Last 30 Days';
+                $periodQuery->where('created_at', '>=', now()->subDays(30));
+            } elseif ($dateFilter === 'custom') {
+                $fromDate = $request->query('from_date');
+                $toDate = $request->query('to_date');
+
+                if (! is_string($fromDate) || ! is_string($toDate) || trim($fromDate) === '' || trim($toDate) === '') {
+                    return response()->json([
+                        'message' => 'Custom date filter requires both from and to dates.',
+                    ], 422);
+                }
+
+                if ($fromDate > $toDate) {
+                    return response()->json([
+                        'message' => 'From date must be before or equal to to date.',
+                    ], 422);
+                }
+
+                $periodFilter = 'custom';
+                $periodLabel = sprintf('Custom Range (%s to %s)', $fromDate, $toDate);
+                $periodQuery->whereBetween('created_at', [
+                    $fromDate.' 00:00:00',
+                    $toDate.' 23:59:59',
+                ]);
+            } else {
+                $periodQuery->whereBetween('created_at', [$todayStart, $todayEnd]);
+            }
+        }
+
+        $periodOrders = $periodQuery->get(['status', 'subtotal', 'total']);
+        $todayOrders = Order::query()
+            ->whereBetween('created_at', [$todayStart, $todayEnd])
+            ->get(['subtotal', 'total']);
+
+        $sumSubtotal = static fn ($orders) => (float) $orders->sum('subtotal');
+        $sumTotal = static fn ($orders) => (float) $orders->sum('total');
+
+        return response()->json([
+            'scope_role' => $isManager ? 'manager' : 'admin',
+            'period_filter' => $periodFilter,
+            'period_label' => $periodLabel,
+            'overview' => [
+                'total_orders' => $periodOrders->count(),
+                'completed_orders' => $periodOrders->where('status', 'completed')->count(),
+                'preparing_orders' => $periodOrders->where('status', 'preparing')->count(),
+                'pending_orders' => $periodOrders->where('status', 'pending')->count(),
+            ],
+            'today' => [
+                'orders' => $todayOrders->count(),
+                'sales_without_tax' => $sumSubtotal($todayOrders),
+                'sales_with_tax' => $sumTotal($todayOrders),
+                'date_label' => now()->format('M d, Y'),
+            ],
+            'period' => [
+                'orders' => $periodOrders->count(),
+                'sales_without_tax' => $sumSubtotal($periodOrders),
+                'sales_with_tax' => $sumTotal($periodOrders),
+            ],
+        ]);
+    }
+
     public function myOrders(Request $request): JsonResponse
     {
         return response()->json(

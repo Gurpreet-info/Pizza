@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\OptionController;
 use App\Http\Controllers\Api\OptionGroupController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OtpController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -39,7 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/orders/my', [OrderController::class, 'myOrders']);
 
-    Route::middleware('admin')->group(function () {
+    Route::middleware('admin_or_manager')->group(function () {
         Route::apiResource('categories', CategoryController::class);
         Route::apiResource('menu-items', MenuItemController::class)->except(['index', 'show']);
         Route::get('/menu-items/without-offers', [MenuItemController::class, 'withoutOffers']);
@@ -55,7 +56,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/offers/{offer}/bogo-free-menu-items', [OfferController::class, 'attachedBogoFreeMenuItems']);
         Route::apiResource('offers', OfferController::class)->except(['index', 'show']);
         Route::get('/orders', [OrderController::class, 'index']);
+        Route::get('/orders/dashboard-stats', [OrderController::class, 'dashboardStats']);
         Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus']);
+    });
+
+    Route::middleware('admin')->group(function () {
+        Route::apiResource('users', UserController::class)->except(['show']);
     });
 });
 
