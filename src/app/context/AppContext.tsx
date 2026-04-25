@@ -13,6 +13,10 @@ interface AppContextType {
   addToCart: (item: CartItem) => void;
   removeFromCart: (itemId: string) => void;
   updateCartItemQuantity: (itemId: string, quantity: number) => void;
+  updateCartItemDetails: (
+    itemId: string,
+    patch: Pick<CartItem, 'selectedOptions' | 'quantity' | 'totalPrice' | 'specialInstructions'>
+  ) => void;
   clearCart: () => void;
   cartTotal: number;
   
@@ -715,6 +719,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
+  const updateCartItemDetails = (
+    itemId: string,
+    patch: Pick<CartItem, 'selectedOptions' | 'quantity' | 'totalPrice' | 'specialInstructions'>
+  ) => {
+    if (patch.quantity <= 0) {
+      removeFromCart(itemId);
+      return;
+    }
+    setCart((prev) =>
+      finalizeCartWithBogo(
+        prev.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                selectedOptions: patch.selectedOptions,
+                quantity: patch.quantity,
+                totalPrice: patch.totalPrice,
+                specialInstructions: patch.specialInstructions,
+              }
+            : item
+        )
+      )
+    );
+  };
+
   const clearCart = () => {
     setCart([]);
   };
@@ -1322,6 +1351,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addToCart,
         removeFromCart,
         updateCartItemQuantity,
+        updateCartItemDetails,
         clearCart,
         cartTotal,
         user,

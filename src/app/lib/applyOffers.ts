@@ -42,8 +42,11 @@ function applyBogoSame(items: CartItem[], offer: Offer): CartItem[] {
     }
     const key = `${item.menuItem.id}::${optionsKey(item)}`;
     const arr = groups.get(key) || [];
+    // For "same product" BOGO, free unit covers base product only.
+    // Add-ons remain chargeable on both units.
+    const freeEligibleUnitPrice = item.menuItem.basePrice;
     for (let q = 0; q < item.quantity; q++) {
-      arr.push({ lineIndex, unitPrice: item.totalPrice });
+      arr.push({ lineIndex, unitPrice: freeEligibleUnitPrice });
     }
     groups.set(key, arr);
   });

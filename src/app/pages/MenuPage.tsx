@@ -24,7 +24,6 @@ export function MenuPage() {
   useEffect(() => {
     void ensureMenuBrowseLoaded();
   }, []);
-  const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
   const toCategorySlug = (name: string) =>
     name
       .trim()
@@ -137,8 +136,6 @@ export function MenuPage() {
             {filteredItems.map((item) => {
               const itemOffer = getOfferForItem(item.id);
               const imageSrc = item.image?.trim() ? item.image : getImageForItem(item.name);
-              const isFocused = focusedItemId === item.id;
-
               return (
                 <div
                   key={item.id}
@@ -146,17 +143,15 @@ export function MenuPage() {
                     'relative flex gap-4 rounded-2xl border bg-white p-4 text-left shadow-sm transition-all',
                     'outline-none focus-visible:ring-2 focus-visible:ring-orange-400/80 focus-visible:ring-offset-2',
                     'hover:border-gray-300 hover:shadow-md',
-                    isFocused
-                      ? 'border-emerald-700 ring-2 ring-emerald-700/30 shadow-sm'
-                      : 'border-gray-200',
+                    'border-gray-200',
                     !item.available ? 'opacity-80' : '',
                     'cursor-pointer',
                   ].join(' ')}
-                  onClick={() => setFocusedItemId((id) => (id === item.id ? null : item.id))}
+                  onClick={() => navigate(`/popularpizza-menu/item/${item.id}`)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      setFocusedItemId((id) => (id === item.id ? null : item.id));
+                      navigate(`/popularpizza-menu/item/${item.id}`);
                     }
                   }}
                   tabIndex={0}
@@ -168,9 +163,7 @@ export function MenuPage() {
                     aria-label={`More about ${item.name}`}
                     className={[
                       'absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors',
-                      isFocused
-                        ? 'border-emerald-700 bg-emerald-700 text-white'
-                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50',
+                      'border-gray-200 bg-white text-gray-600 hover:bg-gray-50',
                     ].join(' ')}
                   >
                     <Info className="h-4 w-4" aria-hidden />

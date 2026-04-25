@@ -76,7 +76,14 @@ export function CartPage() {
         <div className="lg:col-span-2 space-y-4">
           {cartWithOffers.map((item) => (
             <Card key={item.id}>
-              <CardContent className="p-6">
+              <CardContent
+                className="p-6 cursor-pointer"
+                onClick={() =>
+                  navigate(
+                    `/popularpizza-menu/item/${item.menuItem.id}?editCartItemId=${encodeURIComponent(item.id)}`
+                  )
+                }
+              >
                 <div className="flex gap-4">
                   <div className="w-24 h-24 rounded-lg overflow-hidden flex-shrink-0">
                     <ImageWithFallback
@@ -87,7 +94,15 @@ export function CartPage() {
                   </div>
 
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold mb-2">{item.menuItem.name}</h3>
+                    <h3 className="text-xl font-semibold mb-2">
+                      <Link
+                        to={`/popularpizza-menu/item/${item.menuItem.id}?editCartItemId=${encodeURIComponent(item.id)}`}
+                        className="hover:text-orange-600 hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {item.menuItem.name}
+                      </Link>
+                    </h3>
                     {item.bogoSameAutoFree ? (
                       <p className="text-sm text-muted-foreground mb-2">
                         Buy 1 get 1 — free second unit added automatically (same item)
@@ -134,7 +149,10 @@ export function CartPage() {
                           size="icon"
                           className="h-8 w-8"
                           disabled={isCartAutoAddedBogoFreeLine(item)}
-                          onClick={() => updateCartItemQuantity(item.id, item.quantity - 1)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateCartItemQuantity(item.id, item.quantity - 1);
+                          }}
                         >
                           <Minus className="h-4 w-4" />
                         </Button>
@@ -144,7 +162,10 @@ export function CartPage() {
                           size="icon"
                           className="h-8 w-8"
                           disabled={isCartAutoAddedBogoFreeLine(item)}
-                          onClick={() => updateCartItemQuantity(item.id, item.quantity + 1)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateCartItemQuantity(item.id, item.quantity + 1);
+                          }}
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
@@ -165,7 +186,10 @@ export function CartPage() {
                           variant="ghost"
                           size="icon"
                           disabled={isCartAutoAddedBogoFreeLine(item)}
-                          onClick={() => removeFromCart(item.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFromCart(item.id);
+                          }}
                           className="text-red-500 hover:text-red-700 disabled:opacity-40"
                           title={
                             isCartAutoAddedBogoFreeLine(item)

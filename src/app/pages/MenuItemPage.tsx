@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, useSearchParams } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -16,7 +16,18 @@ import { Minus, Plus } from 'lucide-react';
 export function MenuItemPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { menuItems, optionGroups, options, addToCart, ensureMenuCustomizerLoaded } = useApp();
+  const [searchParams] = useSearchParams();
+  const editCartItemId = searchParams.get('editCartItemId');
+  const {
+    cart,
+    menuItems,
+    optionGroups,
+    options,
+    addToCart,
+    updateCartItemDetails,
+    getActiveOffers,
+    ensureMenuCustomizerLoaded,
+  } = useApp();
 
   useEffect(() => {
     void ensureMenuCustomizerLoaded();
@@ -30,6 +41,10 @@ export function MenuItemPage() {
   usePageMeta(menuItem ? menuItem.name : 'Menu item', metaDescription);
 
   const itemOptionGroups = optionGroups.filter(og => og.menuItemId === id);
+  const editingCartItem =
+    editCartItemId && menuItem
+      ? cart.find((c) => c.id === editCartItemId && c.menuItem.id === menuItem.id)
+      : null;
   
   const [selectedOptions, setSelectedOptions] = useState<SelectedOption[]>([]);
   const [quantity, setQuantity] = useState(1);
@@ -37,13 +52,20 @@ export function MenuItemPage() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   useEffect(() => {
-    setSelectedOptions([]);
-    setQuantity(1);
-    setSpecialInstructions('');
+    if (editingCartItem) {
+      setSelectedOptions(editingCartItem.selectedOptions);
+      setQuantity(editingCartItem.quantity);
+      setSpecialInstructions(editingCartItem.specialInstructions || '');
+    } else {
+      setSelectedOptions([]);
+      setQuantity(1);
+      setSpecialInstructions('');
+    }
     setValidationErrors([]);
-  }, [id]);
+  }, [id, editingCartItem?.id]);
 
   useEffect(() => {
+    if (editingCartItem) return;
     itemOptionGroups.forEach((group) => {
       if (group.required && group.type === 'single') {
         const groupOptions = options.filter((o) => o.optionGroupId === group.id);
@@ -63,7 +85,7 @@ export function MenuItemPage() {
         }
       }
     });
-  }, [id, itemOptionGroups.length, options.length]);
+  }, [id, itemOptionGroups.length, options.length, editingCartItem?.id]);
 
   if (!menuItem) {
     return (
@@ -180,17 +202,34 @@ export function MenuItemPage() {
       return;
     }
 
+    const bogoSameOffer = getActiveOffers().find(
+      (offer) =>
+        offer.offerKind === 'bogo_same' &&
+        offer.applicableItemIds.includes(menuItem.id)
+    );
+    const quantityToAdd = !editingCartItem && bogoSameOffer ? Math.max(quantity, 2) : quantity;
+
     const cartItem: CartItem = {
       id: '',
       menuItem,
       selectedOptions,
-      quantity,
+      quantity: quantityToAdd,
       totalPrice: calculateTotalPrice(),
       specialInstructions: specialInstructions || undefined,
     };
 
-    addToCart(cartItem);
-    toast.success('Added to cart!');
+    if (editingCartItem) {
+      updateCartItemDetails(editingCartItem.id, {
+        selectedOptions,
+        quantity,
+        totalPrice: calculateTotalPrice(),
+        specialInstructions: specialInstructions || undefined,
+      });
+      toast.success('Cart item updated!');
+    } else {
+      addToCart(cartItem);
+      toast.success('Added to cart!');
+    }
     navigate('/cart');
   };
 
@@ -345,12 +384,12 @@ export function MenuItemPage() {
               </span>
             </div>
 
-            <Button 
+            <Button
               className="w-full" 
               size="lg"
               onClick={handleAddToCart}
             >
-              Add to Cart
+              {editingCartItem ? 'Update Cart Item' : 'Add to Cart'}
             </Button>
           </div>
         </div>

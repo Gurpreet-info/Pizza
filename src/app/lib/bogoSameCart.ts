@@ -27,8 +27,8 @@ function activeBogoSameOffer(offers: Offer[]): Offer | null {
 }
 
 /**
- * Buy 1 get 1 free on the same SKU + options: when the customer has exactly one qualifying unit
- * across cart lines, add a second unit automatically (mirrors bogo_any auto line).
+ * For bogo_same we do NOT auto-insert free lines.
+ * Offer math is handled in applyOffers based on actual user-selected quantity.
  */
 export function reconcileBogoSameAutoLines(cart: CartItem[], offers: Offer[]): CartItem[] {
   const offer = activeBogoSameOffer(offers);
@@ -37,40 +37,5 @@ export function reconcileBogoSameAutoLines(cart: CartItem[], offers: Offer[]): C
   if (!offer) {
     return base;
   }
-
-  const applicable = new Set(offer.applicableItemIds);
-  const groups = new Map<
-    string,
-    { userQty: number; template: CartItem }
-  >();
-
-  for (const line of base) {
-    if (line.bogoAutoFree) continue;
-    if (!applicable.has(line.menuItem.id)) continue;
-
-    const key = `${line.menuItem.id}::${optionsKey(line)}`;
-    const prev = groups.get(key);
-    const addQty = line.quantity;
-    if (!prev) {
-      groups.set(key, { userQty: addQty, template: line });
-    } else {
-      groups.set(key, {
-        userQty: prev.userQty + addQty,
-        template: prev.template,
-      });
-    }
-  }
-
-  const extra: CartItem[] = [];
-  for (const [, { userQty, template }] of groups) {
-    if (userQty !== 1) continue;
-    extra.push({
-      ...template,
-      id: stableAutoId(offer.id, template),
-      quantity: 1,
-      bogoSameAutoFree: { offerId: offer.id },
-    });
-  }
-
-  return [...base, ...extra];
+  return base;
 }
