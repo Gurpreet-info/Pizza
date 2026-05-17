@@ -11,7 +11,8 @@ import { HomePageBanner } from '../components/HomePageBanner';
 export function CouponsPage() {
   usePageMeta(
     'Coupons',
-    'Browse active Pizza Offers coupon codes — copy at checkout and save on eligible orders.'
+    'Browse active Pizza Offers coupon codes — copy at checkout and save on eligible orders.',
+    'coupons'
   );
 
   const { coupons, ensureCouponsPageLoaded } = useApp();

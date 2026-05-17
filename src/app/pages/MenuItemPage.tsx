@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/button';
@@ -38,9 +38,30 @@ export function MenuItemPage() {
     ? (menuItem.description?.trim() ||
         `Customize ${menuItem.name} with options and add it to your cart at Pizza Offers.`)
     : 'This menu item could not be found. Browse the full menu and order online at Pizza Offers.';
-  usePageMeta(menuItem ? menuItem.name : 'Menu item', metaDescription);
+  usePageMeta(menuItem ? menuItem.name : 'Menu item', metaDescription, 'menu_item');
 
-  const itemOptionGroups = optionGroups.filter(og => og.menuItemId === id);
+  const itemOptionGroups = useMemo(() => {
+    const list = optionGroups.filter((og) => og.menuItemId === id);
+    return [...list].sort((a, b) => {
+      const byOrder = a.order - b.order;
+      if (byOrder !== 0) return byOrder;
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+  }, [optionGroups, id]);
+
+  /** Options per group in ascending order (API list is newest-first). */
+  const optionsByGroupId = useMemo(() => {
+    const map = new Map<string, Option[]>();
+    for (const opt of options) {
+      const list = map.get(opt.optionGroupId) ?? [];
+      list.push(opt);
+      map.set(opt.optionGroupId, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+    }
+    return map;
+  }, [options]);
   const editingCartItem =
     editCartItemId && menuItem
       ? cart.find((c) => c.id === editCartItemId && c.menuItem.id === menuItem.id)
@@ -68,7 +89,7 @@ export function MenuItemPage() {
     if (editingCartItem) return;
     itemOptionGroups.forEach((group) => {
       if (group.required && group.type === 'single') {
-        const groupOptions = options.filter((o) => o.optionGroupId === group.id);
+        const groupOptions = optionsByGroupId.get(group.id) ?? [];
         const first = groupOptions[0];
         if (first) {
           setSelectedOptions((prev) => {
@@ -85,7 +106,7 @@ export function MenuItemPage() {
         }
       }
     });
-  }, [id, itemOptionGroups.length, options.length, editingCartItem?.id]);
+  }, [id, itemOptionGroups, optionsByGroupId, editingCartItem?.id]);
 
   if (!menuItem) {
     return (
@@ -270,7 +291,7 @@ export function MenuItemPage() {
           {/* Option Groups */}
           <div className="space-y-6 mb-6">
             {itemOptionGroups.map(group => {
-              const groupOptions = options.filter(o => o.optionGroupId === group.id);
+              const groupOptions = optionsByGroupId.get(group.id) ?? [];
               
               return (
                 <Card key={group.id}>
@@ -304,9 +325,9 @@ export function MenuItemPage() {
                                 {option.name}
                               </Label>
                             </div>
-                            <span className="text-gray-600">
-                              {option.price > 0 ? `+$${option.price.toFixed(2)}` : 'Free'}
-                            </span>
+                            {option.price > 0 ? (
+                              <span className="text-gray-600">+${option.price.toFixed(2)}</span>
+                            ) : null}
                           </div>
                         ))}
                       </RadioGroup>
@@ -326,9 +347,9 @@ export function MenuItemPage() {
                                 {option.name}
                               </Label>
                             </div>
-                            <span className="text-gray-600">
-                              {option.price > 0 ? `+$${option.price.toFixed(2)}` : 'Free'}
-                            </span>
+                            {option.price > 0 ? (
+                              <span className="text-gray-600">+${option.price.toFixed(2)}</span>
+                            ) : null}
                           </div>
                         ))}
                       </div>

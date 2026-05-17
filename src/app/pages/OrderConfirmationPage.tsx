@@ -20,7 +20,8 @@ export function OrderConfirmationPage() {
     order ? `Order #${order.id}` : 'Order confirmation',
     order
       ? `Your Pizza Offers order #${order.id} is confirmed. Thank you — we will prepare it shortly.`
-      : 'View your order confirmation number and details, or return to the menu to place an order.'
+      : 'View your order confirmation number and details, or return to the menu to place an order.',
+    'order_confirmation'
   );
 
   if (!order) {

@@ -6,7 +6,8 @@ import { usePageMeta } from '../hooks/usePageMeta';
 export function NotFoundPage() {
   usePageMeta(
     'Page not found',
-    'This page does not exist on Pizza Offers. Go home or open the menu to continue ordering.'
+    'This page does not exist on Pizza Offers. Go home or open the menu to continue ordering.',
+    'not_found'
   );
 
   return (

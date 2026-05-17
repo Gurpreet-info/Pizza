@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { applyOffersToCart } from '../lib/applyOffers';
 import { reconcileBogoAnyAutoLines } from '../lib/bogoAnyCart';
 import { reconcileBogoSameAutoLines } from '../lib/bogoSameCart';
-import { CartItem, Category, Coupon, DeliveryPostalCode, Location, MenuItem, Offer, Option, OptionGroup, Order, User } from '../types';
+import { CartItem, Category, Coupon, DeliveryPostalCode, Location, MenuItem, Offer, Option, OptionGroup, Order, SeoSetting, SelectedOption, User } from '../types';
 
 export type ApiRequestMeta = { silent?: boolean };
 
@@ -64,6 +64,7 @@ interface AppContextType {
   activeDeliveryPostalCodes: DeliveryPostalCode[];
   /** All delivery postal codes including inactive (admin). */
   deliveryPostalCodesAdmin: DeliveryPostalCode[];
+  seoSettings: SeoSetting[];
 
   // Admin functions
   addMenuItem: (item: Omit<MenuItem, 'id'>) => void;
@@ -129,6 +130,10 @@ interface AppContextType {
   /** Re-fetch `/orders/my` without loading overlay (for dashboard polling). */
   refreshUserOrdersQuiet: () => Promise<void>;
   ensureAdminWorkspaceLoaded: () => Promise<void>;
+  ensureSeoSettingsLoaded: () => Promise<void>;
+  updateSeoSettings: (
+    rows: Array<{ page_key: string; meta_title: string; meta_description: string }>
+  ) => Promise<SeoSetting[]>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -157,6 +162,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [offers, setOffers] = useState<Offer[]>([]);
   const [activeDeliveryPostalCodes, setActiveDeliveryPostalCodes] = useState<DeliveryPostalCode[]>([]);
   const [deliveryPostalCodesAdmin, setDeliveryPostalCodesAdmin] = useState<DeliveryPostalCode[]>([]);
+  const [seoSettings, setSeoSettings] = useState<SeoSetting[]>([]);
   const [pendingRequests, setPendingRequests] = useState(0);
   const [checkoutRevealPassword, setCheckoutRevealPassword] = useState<string | null>(null);
 
@@ -222,6 +228,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     required: Boolean(raw.required),
     minSelections: raw.min_selections ?? undefined,
     maxSelections: raw.max_selections ?? undefined,
+    order: raw.display_order ?? 0,
   });
 
   const toOption = (raw: any): Option => ({
@@ -307,6 +314,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     active: Boolean(raw.active ?? true),
   });
 
+  const toSeoSetting = (raw: any): SeoSetting => ({
+    id: String(raw.id),
+    pageKey: String(raw.page_key ?? ''),
+    metaTitle: String(raw.meta_title ?? ''),
+    metaDescription: String(raw.meta_description ?? ''),
+  });
+
   const toOrderItems = (rawItems: any[]): CartItem[] => {
     return (rawItems || []).map((row: any) => {
       const rawMenuItem = row.menu_item ?? row.menuItem;
@@ -327,7 +341,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (row.options || []).forEach((optRow: any) => {
         const groupId = String(optRow.option_group_id ?? optRow.optionGroup?.id ?? '');
         if (!groupId) return;
-        const existing = grouped.get(groupId) || {
+        const existing: SelectedOption = grouped.get(groupId) || {
           optionGroupId: groupId,
           optionGroupName: optRow.option_group?.name ?? optRow.optionGroup?.name ?? 'Options',
           options: [],
@@ -468,7 +482,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     | 'coupons'
     | 'deliveryPublic'
     | 'deliveryAdmin'
-    | 'ordersAdmin';
+    | 'ordersAdmin'
+    | 'seoSettings';
 
   const loaded = useRef<Record<LoadedKey, boolean>>({
     categories: false,
@@ -481,6 +496,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     deliveryPublic: false,
     deliveryAdmin: false,
     ordersAdmin: false,
+    seoSettings: false,
   });
 
   const ensureCategories = async (force = false) => {
@@ -557,6 +573,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
     loaded.current.ordersAdmin = true;
+  };
+
+  const ensureSeoSettings = async (force = false) => {
+    if (loaded.current.seoSettings && !force) return;
+    const rows = await request('/seo-settings', {}, { silent: true });
+    setSeoSettings((rows || []).map(toSeoSetting));
+    loaded.current.seoSettings = true;
   };
 
   const reloadCustomization = () => Promise.all([ensureOptionGroups(true), ensureOptions(true)]);
@@ -647,6 +670,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ensureDeliveryAdmin(),
     ]);
     await ensureAdminOrders(true);
+  };
+
+  const updateSeoSettings = async (
+    rows: Array<{ page_key: string; meta_title: string; meta_description: string }>
+  ): Promise<SeoSetting[]> => {
+    const saved = await request('/seo-settings', {
+      method: 'PUT',
+      body: JSON.stringify({ settings: rows }),
+    });
+    const mapped = (saved || []).map(toSeoSetting);
+    setSeoSettings(mapped);
+    loaded.current.seoSettings = true;
+    return mapped;
   };
 
   useEffect(() => {
@@ -970,21 +1006,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         required: group.required,
         min_selections: group.minSelections,
         max_selections: group.maxSelections,
+        display_order: group.order ?? 0,
       }),
     }).then(reloadCustomization);
   };
 
   const updateOptionGroup = (id: string, group: Partial<OptionGroup>) => {
+    const body: Record<string, unknown> = {};
+    if (group.menuItemId !== undefined) body.menu_item_id = Number(group.menuItemId);
+    if (group.name !== undefined) body.name = group.name;
+    if (group.type !== undefined) body.type = group.type;
+    if (group.required !== undefined) body.required = group.required;
+    if (group.minSelections !== undefined) body.min_selections = group.minSelections;
+    if (group.maxSelections !== undefined) body.max_selections = group.maxSelections;
+    if (group.order !== undefined) body.display_order = group.order;
+
     void request(`/option-groups/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({
-        menu_item_id: group.menuItemId ? Number(group.menuItemId) : undefined,
-        name: group.name,
-        type: group.type,
-        required: group.required,
-        min_selections: group.minSelections,
-        max_selections: group.maxSelections,
-      }),
+      body: JSON.stringify(body),
     }).then(reloadCustomization);
   };
 
@@ -1373,6 +1412,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         offers,
         activeDeliveryPostalCodes,
         deliveryPostalCodesAdmin,
+        seoSettings,
         addMenuItem,
         updateMenuItem,
         deleteMenuItem,
@@ -1418,6 +1458,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ensureUserDashboardLoaded,
         refreshUserOrdersQuiet,
         ensureAdminWorkspaceLoaded,
+        ensureSeoSettingsLoaded: ensureSeoSettings,
+        updateSeoSettings,
       }}
     >
       {children}

@@ -122,10 +122,16 @@ export function Footer() {
           <p className="flex items-center justify-center gap-1">
             &copy; 2026 Pizza Offers. All rights reserved. Developed By GP: 
             
-            <span className="flex items-center gap-1">
+            <a
+              href="https://wa.me/919646677913"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 hover:text-orange-500 transition-colors"
+              aria-label="Chat on WhatsApp"
+            >
               <WhatsAppIcon className="w-4 h-4 text-green-500" />
               +919646677913
-            </span>
+            </a>
           </p>
         </div>
       </div>

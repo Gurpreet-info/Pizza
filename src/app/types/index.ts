@@ -24,6 +24,8 @@ export interface OptionGroup {
   required: boolean;
   minSelections?: number;
   maxSelections?: number;
+  /** Display order on customize page (from API `display_order`; lower = earlier). */
+  order: number;
 }
 
 export interface Option {
@@ -157,4 +159,11 @@ export interface User {
   isAdmin: boolean;
   isManager: boolean;
   phoneVerifiedAt?: string | null;
+}
+
+export interface SeoSetting {
+  id: string;
+  pageKey: string;
+  metaTitle: string;
+  metaDescription: string;
 }

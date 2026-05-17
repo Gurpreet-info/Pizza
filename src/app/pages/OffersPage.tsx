@@ -10,7 +10,8 @@ import { HomePageBanner } from '../components/HomePageBanner';
 export function OffersPage() {
   usePageMeta(
     'Offers',
-    'Explore current Pizza Offers promotions — discounts, BOGO deals, and spend-based rewards on menu favourites.'
+    'Explore current Pizza Offers promotions — discounts, BOGO deals, and spend-based rewards on menu favourites.',
+    'offers'
   );
 
   const { offers, menuItems, ensureOffersMarketingLoaded } = useApp();

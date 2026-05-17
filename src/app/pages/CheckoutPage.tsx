@@ -23,7 +23,8 @@ import { usePageMeta } from '../hooks/usePageMeta';
 export function CheckoutPage() {
   usePageMeta(
     'Checkout',
-    'Complete your Pizza Offers order — pickup or delivery, contact details, coupons, and payment summary.'
+    'Complete your Pizza Offers order — pickup or delivery, contact details, coupons, and payment summary.',
+    'checkout'
   );
 
   const navigate = useNavigate();

@@ -18,7 +18,8 @@ import { usePageMeta } from '../hooks/usePageMeta';
 export function CartPage() {
   usePageMeta(
     'Cart',
-    'Review your Pizza Offers cart — items, quantities, options, and applied deals before checkout.'
+    'Review your Pizza Offers cart — items, quantities, options, and applied deals before checkout.',
+    'cart'
   );
 
   const navigate = useNavigate();

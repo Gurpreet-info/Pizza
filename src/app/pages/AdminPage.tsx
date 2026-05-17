@@ -48,13 +48,15 @@ type UserFormData = {
 export function AdminPage() {
   usePageMeta(
     'Admin',
-    'Pizza Offers admin — manage menu, locations, coupons, offers, delivery zones, and order history.'
+    'Pizza Offers admin — manage menu, locations, coupons, offers, delivery zones, and order history.',
+    'admin'
   );
 
   const navigate = useNavigate();
   const { 
     user, 
     menuItems, categories, optionGroups, options, locations, orders, coupons, offers,
+    seoSettings,
     addMenuItem, updateMenuItem, deleteMenuItem,
     addCategory, updateCategory, deleteCategory,
     addOptionGroup, updateOptionGroup, deleteOptionGroup,
@@ -68,6 +70,8 @@ export function AdminPage() {
     updateOrderStatus,
     refreshAdminOrdersList,
     ensureAdminWorkspaceLoaded,
+    ensureSeoSettingsLoaded,
+    updateSeoSettings,
     apiRequest,
   } = useApp();
 
@@ -95,6 +99,9 @@ export function AdminPage() {
   useEffect(() => {
     if (!canAccessAdmin) return;
     void ensureAdminWorkspaceLoaded();
+    if (isAdminOnly) {
+      void ensureSeoSettingsLoaded();
+    }
     if (isAdminOnly) {
       void loadAdminUsers();
     } else {
@@ -381,6 +388,7 @@ export function AdminPage() {
           </TabsTrigger>
           <TabsTrigger value="coupons">Coupons</TabsTrigger>
           <TabsTrigger value="offers">Offers</TabsTrigger>
+          {isAdminOnly ? <TabsTrigger value="seo">SEO</TabsTrigger> : null}
           {isAdminOnly ? <TabsTrigger value="users">Users</TabsTrigger> : null}
         </TabsList>
 
@@ -475,6 +483,15 @@ export function AdminPage() {
         </TabsContent>
 
         {isAdminOnly ? (
+          <TabsContent value="seo">
+            <SeoSettingsManager
+              rows={seoSettings}
+              saveRows={updateSeoSettings}
+            />
+          </TabsContent>
+        ) : null}
+
+        {isAdminOnly ? (
           <TabsContent value="users">
             <UsersManager
               users={adminUsers}
@@ -487,6 +504,126 @@ export function AdminPage() {
         ) : null}
       </Tabs>
     </div>
+  );
+}
+
+const SEO_PAGE_OPTIONS = [
+  { key: 'home', label: 'Home' },
+  { key: 'menu', label: 'Menu' },
+  { key: 'menu_item', label: 'Menu item' },
+  { key: 'offers', label: 'Offers' },
+  { key: 'coupons', label: 'Coupons' },
+  { key: 'cart', label: 'Cart' },
+  { key: 'checkout', label: 'Checkout' },
+  { key: 'locations', label: 'Locations' },
+  { key: 'login', label: 'Login' },
+  { key: 'user_dashboard', label: 'User dashboard' },
+  { key: 'order_confirmation', label: 'Order confirmation' },
+  { key: 'admin', label: 'Admin' },
+  { key: 'not_found', label: 'Not found (404)' },
+] as const;
+
+type SeoEditorRow = {
+  page_key: string;
+  label: string;
+  meta_title: string;
+  meta_description: string;
+};
+
+function SeoSettingsManager({
+  rows,
+  saveRows,
+}: {
+  rows: Array<{ pageKey: string; metaTitle: string; metaDescription: string }>;
+  saveRows: (
+    payload: Array<{ page_key: string; meta_title: string; meta_description: string }>
+  ) => Promise<any>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [editorRows, setEditorRows] = useState<SeoEditorRow[]>([]);
+
+  useEffect(() => {
+    const byKey = new Map(rows.map((r) => [r.pageKey, r]));
+    setEditorRows(
+      SEO_PAGE_OPTIONS.map((p) => ({
+        page_key: p.key,
+        label: p.label,
+        meta_title: byKey.get(p.key)?.metaTitle ?? '',
+        meta_description: byKey.get(p.key)?.metaDescription ?? '',
+      }))
+    );
+  }, [rows]);
+
+  const updateRow = (
+    pageKey: string,
+    field: 'meta_title' | 'meta_description',
+    value: string
+  ) => {
+    setEditorRows((prev) =>
+      prev.map((r) => (r.page_key === pageKey ? { ...r, [field]: value } : r))
+    );
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveRows(
+        editorRows.map((r) => ({
+          page_key: r.page_key,
+          meta_title: r.meta_title.trim(),
+          meta_description: r.meta_description.trim(),
+        }))
+      );
+      toast.success('SEO metadata saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save SEO settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>SEO metadata</CardTitle>
+        <p className="text-sm text-gray-600">
+          Set page-wise meta title and description. Leave blank to use existing page defaults.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {editorRows.map((row) => (
+          <div key={row.page_key} className="rounded-lg border p-4">
+            <p className="mb-3 text-sm font-semibold text-gray-700">{row.label}</p>
+            <div className="grid gap-3">
+              <div>
+                <Label htmlFor={`seo-title-${row.page_key}`}>Meta title</Label>
+                <Input
+                  id={`seo-title-${row.page_key}`}
+                  value={row.meta_title}
+                  onChange={(e) => updateRow(row.page_key, 'meta_title', e.target.value)}
+                  placeholder="Optional"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor={`seo-desc-${row.page_key}`}>Meta description</Label>
+                <Textarea
+                  id={`seo-desc-${row.page_key}`}
+                  value={row.meta_description}
+                  onChange={(e) => updateRow(row.page_key, 'meta_description', e.target.value)}
+                  placeholder="Optional"
+                  rows={3}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+        <Button onClick={() => void handleSave()} disabled={saving}>
+          {saving ? 'Saving…' : 'Save SEO Settings'}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

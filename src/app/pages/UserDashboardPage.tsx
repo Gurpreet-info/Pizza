@@ -128,7 +128,8 @@ function OrderPricingFooter({ order }: { order: Order }) {
 export function UserDashboardPage() {
   usePageMeta(
     'My orders',
-    'View your Pizza Offers order history, statuses, totals, and account details in one place.'
+    'View your Pizza Offers order history, statuses, totals, and account details in one place.',
+    'user_dashboard'
   );
 
   const navigate = useNavigate();

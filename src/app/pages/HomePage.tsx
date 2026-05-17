@@ -12,7 +12,8 @@ import { Clock, MapPin, Phone, ChevronLeft, ChevronRight } from 'lucide-react';
 export function HomePage() {
   usePageMeta(
     'Home',
-    'Discover Pizza Offers — featured deals on the home slider, store hours, and quick links to order online.'
+    'Discover Pizza Offers — featured deals on the home slider, store hours, and quick links to order online.',
+    'home'
   );
 
   const { categories, locations, offers, ensureHomePageLoaded } = useApp();

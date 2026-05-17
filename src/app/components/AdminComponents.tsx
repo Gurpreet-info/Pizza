@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -12,11 +12,34 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
-import { Pencil, Trash2, Plus, Receipt, Printer } from 'lucide-react';
+import { Check, ChevronsUpDown, Pencil, Plus, Printer, Receipt, Search, Trash2 } from 'lucide-react';
 import { MenuItem, OptionGroup, Option, Location, Order, CartItem, StoreStatusMode } from '../types';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../components/ui/command';
+import { cn } from '../components/ui/utils';
 
 /** Matches checkout: `CheckoutPage` uses 13% HST on (subtotal − discounts + delivery). */
 const RECEIPT_HST_PERCENT = 13;
+
+/** Searchable combobox inside admin dialogs — keeps search visible, list scrolls within viewport. */
+const ADMIN_SEARCH_COMBO_POPOVER =
+  'z-[100] flex max-h-[min(18rem,var(--radix-popover-content-available-height,18rem))] flex-col overflow-hidden p-0 w-[min(calc(100vw-2rem),28rem)] sm:w-[var(--radix-popover-trigger-width)]';
+const ADMIN_SEARCH_COMBO_COMMAND = 'flex min-h-0 flex-1 flex-col overflow-hidden';
+const ADMIN_SEARCH_COMBO_LIST =
+  'max-h-[min(14rem,calc(var(--radix-popover-content-available-height,18rem)-2.75rem))] min-h-0 flex-1 overflow-y-auto overscroll-contain';
+const ADMIN_SEARCH_COMBO_POPOVER_PROPS = {
+  side: 'bottom' as const,
+  align: 'start' as const,
+  collisionPadding: 16,
+  sticky: 'partial' as const,
+};
 
 function getOrderPricingBreakdown(order: Order) {
   const taxableBeforeTax = Number((order.total - order.tax).toFixed(2));
@@ -333,6 +356,7 @@ export function OptionsManager({ menuItems, optionGroups, options, addOptionGrou
         deleteOptionGroup={deleteOptionGroup}
       />
       <OptionsListManager
+        menuItems={menuItems}
         optionGroups={optionGroups}
         options={options}
         addOption={addOption}
@@ -346,6 +370,8 @@ export function OptionsManager({ menuItems, optionGroups, options, addOptionGrou
 // Option Groups Manager
 function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOptionGroup, deleteOptionGroup }: any) {
   const [isOpen, setIsOpen] = useState(false);
+  const [menuItemPickerOpen, setMenuItemPickerOpen] = useState(false);
+  const [groupTableSearch, setGroupTableSearch] = useState('');
   const [editingGroup, setEditingGroup] = useState<OptionGroup | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -354,7 +380,50 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
     required: false,
     minSelections: '',
     maxSelections: '',
+    order: '0',
   });
+
+  const optionGroupsSorted = useMemo(() => {
+    const nameById = new Map(menuItems.map((m: MenuItem) => [m.id, m.name]));
+    return [...optionGroups].sort((a: OptionGroup, b: OptionGroup) => {
+      const an = nameById.get(a.menuItemId) ?? '';
+      const bn = nameById.get(b.menuItemId) ?? '';
+      const byMenu = an.localeCompare(bn);
+      if (byMenu !== 0) return byMenu;
+      const byOrder = a.order - b.order;
+      if (byOrder !== 0) return byOrder;
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+  }, [optionGroups, menuItems]);
+
+  const optionGroupsTableRows = useMemo(() => {
+    const q = groupTableSearch.trim().toLowerCase();
+    if (!q) return optionGroupsSorted;
+    return optionGroupsSorted.filter((group: OptionGroup) => {
+      const menuItem = menuItems.find((item: MenuItem) => item.id === group.menuItemId);
+      const hay = [
+        group.name,
+        menuItem?.name ?? '',
+        group.type,
+        String(group.order ?? 0),
+        group.id,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [optionGroupsSorted, menuItems, groupTableSearch]);
+
+  const menuItemsSorted = useMemo(
+    () => [...menuItems].sort((a: MenuItem, b: MenuItem) => a.name.localeCompare(b.name)),
+    [menuItems]
+  );
+
+  const selectedMenuItemLabel = useMemo(() => {
+    if (!formData.menuItemId) return '';
+    const item = menuItems.find((m: MenuItem) => m.id === formData.menuItemId);
+    return item?.name ?? '';
+  }, [formData.menuItemId, menuItems]);
 
   const resetForm = () => {
     setFormData({
@@ -364,11 +433,14 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
       required: false,
       minSelections: '',
       maxSelections: '',
+      order: '0',
     });
     setEditingGroup(null);
+    setMenuItemPickerOpen(false);
   };
 
   const handleEdit = (group: OptionGroup) => {
+    setMenuItemPickerOpen(false);
     setEditingGroup(group);
     setFormData({
       name: group.name,
@@ -377,6 +449,7 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
       required: group.required,
       minSelections: group.minSelections?.toString() || '',
       maxSelections: group.maxSelections?.toString() || '',
+      order: String(group.order ?? 0),
     });
     setIsOpen(true);
   };
@@ -389,6 +462,7 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
       menuItemId: formData.menuItemId,
       type: formData.type,
       required: formData.required,
+      order: Number.parseInt(formData.order, 10) || 0,
     };
 
     if (formData.minSelections) {
@@ -452,16 +526,58 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
                 </div>
                 <div>
                   <Label htmlFor="menu-item">Menu Item *</Label>
-                  <Select value={formData.menuItemId} onValueChange={(value) => setFormData({ ...formData, menuItemId: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select menu item" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {menuItems.map((item: MenuItem) => (
-                        <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover modal={false} open={menuItemPickerOpen} onOpenChange={setMenuItemPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="menu-item"
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={menuItemPickerOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        <span className="truncate text-left">
+                          {formData.menuItemId ? selectedMenuItemLabel : 'Select menu item'}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      {...ADMIN_SEARCH_COMBO_POPOVER_PROPS}
+                      className={ADMIN_SEARCH_COMBO_POPOVER}
+                    >
+                      <Command className={ADMIN_SEARCH_COMBO_COMMAND}>
+                        <CommandInput
+                          placeholder="Search menu items…"
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
+                        <CommandList className={ADMIN_SEARCH_COMBO_LIST}>
+                          <CommandEmpty>No menu item found.</CommandEmpty>
+                          <CommandGroup>
+                            {menuItemsSorted.map((item: MenuItem) => (
+                              <CommandItem
+                                key={item.id}
+                                value={`${item.id} ${item.name}`}
+                                onSelect={() => {
+                                  setFormData((prev) => ({ ...prev, menuItemId: item.id }));
+                                  setMenuItemPickerOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    'h-4 w-4 shrink-0',
+                                    formData.menuItemId === item.id ? 'opacity-100' : 'opacity-0'
+                                  )}
+                                  aria-hidden
+                                />
+                                <span className="truncate">{item.name}</span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div>
                   <Label htmlFor="group-type">Selection Type *</Label>
@@ -474,6 +590,18 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
                       <SelectItem value="multiple">Multiple Select</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div>
+                  <Label htmlFor="group-order">Display order</Label>
+                  <Input
+                    id="group-order"
+                    type="number"
+                    min={0}
+                    value={formData.order}
+                    onChange={(e) => setFormData({ ...formData, order: e.target.value })}
+                    placeholder="0 = first"
+                  />
+                  <p className="text-muted-foreground mt-1 text-xs">Lower numbers appear first on the item customize page.</p>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Switch
@@ -507,30 +635,52 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
                 )}
               </div>
               <DialogFooter>
-                <Button type="submit">{editingGroup ? 'Update' : 'Add'} Group</Button>
+                <Button type="submit" disabled={!formData.menuItemId.trim()}>
+                  {editingGroup ? 'Update' : 'Add'} Group
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </CardHeader>
       <CardContent>
+        <div className="relative mb-4">
+          <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" aria-hidden />
+          <Input
+            type="search"
+            value={groupTableSearch}
+            onChange={(e) => setGroupTableSearch(e.target.value)}
+            placeholder="Search by group name, menu item, type, order…"
+            className="pl-9"
+            aria-label="Search option groups"
+          />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Menu Item</TableHead>
+              <TableHead>Order</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Required</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {optionGroups.map((group: OptionGroup) => {
+            {optionGroupsTableRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-muted-foreground text-center py-8">
+                  No option groups match your search.
+                </TableCell>
+              </TableRow>
+            ) : (
+              optionGroupsTableRows.map((group: OptionGroup) => {
               const menuItem = menuItems.find((item: MenuItem) => item.id === group.menuItemId);
               return (
                 <TableRow key={group.id}>
                   <TableCell className="font-medium">{group.name}</TableCell>
                   <TableCell>{menuItem?.name}</TableCell>
+                  <TableCell className="tabular-nums">{group.order}</TableCell>
                   <TableCell className="capitalize">{group.type}</TableCell>
                   <TableCell>
                     <Badge variant={group.required ? 'default' : 'secondary'}>
@@ -549,7 +699,8 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
                   </TableCell>
                 </TableRow>
               );
-            })}
+            })
+            )}
           </TableBody>
         </Table>
       </CardContent>
@@ -558,8 +709,17 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
 }
 
 // Options List Manager
-function OptionsListManager({ optionGroups, options, addOption, updateOption, deleteOption }: any) {
+function OptionsListManager({
+  menuItems,
+  optionGroups,
+  options,
+  addOption,
+  updateOption,
+  deleteOption,
+}: any) {
   const [isOpen, setIsOpen] = useState(false);
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const [optionsTableSearch, setOptionsTableSearch] = useState('');
   const [editingOption, setEditingOption] = useState<Option | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -567,12 +727,59 @@ function OptionsListManager({ optionGroups, options, addOption, updateOption, de
     price: '',
   });
 
+  const menuItemNameById = useMemo(
+    () => new Map(menuItems.map((m: MenuItem) => [m.id, m.name])),
+    [menuItems]
+  );
+
+  const optionGroupsSorted = useMemo(() => {
+    return [...optionGroups].sort((a: OptionGroup, b: OptionGroup) => {
+      const an = menuItemNameById.get(a.menuItemId) ?? '';
+      const bn = menuItemNameById.get(b.menuItemId) ?? '';
+      const byMenu = an.localeCompare(bn);
+      if (byMenu !== 0) return byMenu;
+      const byOrder = a.order - b.order;
+      if (byOrder !== 0) return byOrder;
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+  }, [optionGroups, menuItemNameById]);
+
+  const selectedOptionGroupLabel = useMemo(() => {
+    if (!formData.optionGroupId) return '';
+    const g = optionGroups.find((x: OptionGroup) => x.id === formData.optionGroupId);
+    if (!g) return '';
+    const itemName = menuItemNameById.get(g.menuItemId) ?? 'Unknown item';
+    return `${itemName} — ${g.name}`;
+  }, [formData.optionGroupId, optionGroups, menuItemNameById]);
+
+  const optionsTableRows = useMemo(() => {
+    const q = optionsTableSearch.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((opt: Option) => {
+      const group = optionGroups.find((g: OptionGroup) => g.id === opt.optionGroupId);
+      const itemName = group ? menuItemNameById.get(group.menuItemId) ?? '' : '';
+      const hay = [
+        opt.name,
+        opt.price.toFixed(2),
+        String(opt.price),
+        group?.name ?? '',
+        itemName,
+        opt.id,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [options, optionGroups, menuItemNameById, optionsTableSearch]);
+
   const resetForm = () => {
     setFormData({ name: '', optionGroupId: '', price: '' });
     setEditingOption(null);
+    setGroupPickerOpen(false);
   };
 
   const handleEdit = (option: Option) => {
+    setGroupPickerOpen(false);
     setEditingOption(option);
     setFormData({
       name: option.name,
@@ -645,16 +852,70 @@ function OptionsListManager({ optionGroups, options, addOption, updateOption, de
                 </div>
                 <div>
                   <Label htmlFor="option-group">Option Group *</Label>
-                  <Select value={formData.optionGroupId} onValueChange={(value) => setFormData({ ...formData, optionGroupId: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select option group" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {optionGroups.map((group: OptionGroup) => (
-                        <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover modal={false} open={groupPickerOpen} onOpenChange={setGroupPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="option-group"
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={groupPickerOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        <span className="truncate text-left">
+                          {formData.optionGroupId ? selectedOptionGroupLabel : 'Select option group'}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      {...ADMIN_SEARCH_COMBO_POPOVER_PROPS}
+                      className={ADMIN_SEARCH_COMBO_POPOVER}
+                    >
+                      <Command
+                        className={ADMIN_SEARCH_COMBO_COMMAND}
+                        filter={(value, search) => {
+                          const q = search.trim().toLowerCase();
+                          if (!q) return 1;
+                          return value.toLowerCase().includes(q) ? 1 : 0;
+                        }}
+                      >
+                        <CommandInput
+                          placeholder="Search by option group or menu item…"
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
+                        <CommandList className={ADMIN_SEARCH_COMBO_LIST}>
+                          <CommandEmpty>No option group found.</CommandEmpty>
+                          <CommandGroup>
+                            {optionGroupsSorted.map((group: OptionGroup) => {
+                              const itemName = menuItemNameById.get(group.menuItemId) ?? 'Unknown item';
+                              const label = `${itemName} — ${group.name}`;
+                              const filterValue = `${group.id} ${itemName} ${group.name} ${group.type}`;
+                              return (
+                                <CommandItem
+                                  key={group.id}
+                                  value={filterValue}
+                                  onSelect={() => {
+                                    setFormData((prev) => ({ ...prev, optionGroupId: group.id }));
+                                    setGroupPickerOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      'h-4 w-4 shrink-0',
+                                      formData.optionGroupId === group.id ? 'opacity-100' : 'opacity-0'
+                                    )}
+                                    aria-hidden
+                                  />
+                                  <span className="truncate">{label}</span>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div>
                   <Label htmlFor="option-price">Additional Price</Label>
@@ -669,13 +930,26 @@ function OptionsListManager({ optionGroups, options, addOption, updateOption, de
                 </div>
               </div>
               <DialogFooter>
-                <Button type="submit">{editingOption ? 'Update' : 'Add'} Option</Button>
+                <Button type="submit" disabled={!formData.optionGroupId.trim()}>
+                  {editingOption ? 'Update' : 'Add'} Option
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </CardHeader>
       <CardContent>
+        <div className="relative mb-4">
+          <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" aria-hidden />
+          <Input
+            type="search"
+            value={optionsTableSearch}
+            onChange={(e) => setOptionsTableSearch(e.target.value)}
+            placeholder="Search by option name, price, group, menu item…"
+            className="pl-9"
+            aria-label="Search options"
+          />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -686,7 +960,14 @@ function OptionsListManager({ optionGroups, options, addOption, updateOption, de
             </TableRow>
           </TableHeader>
           <TableBody>
-            {options.map((option: Option) => {
+            {optionsTableRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-muted-foreground text-center py-8">
+                  No options match your search.
+                </TableCell>
+              </TableRow>
+            ) : (
+              optionsTableRows.map((option: Option) => {
               const group = optionGroups.find((g: OptionGroup) => g.id === option.optionGroupId);
               return (
                 <TableRow key={option.id}>
@@ -705,7 +986,8 @@ function OptionsListManager({ optionGroups, options, addOption, updateOption, de
                   </TableCell>
                 </TableRow>
               );
-            })}
+            })
+            )}
           </TableBody>
         </Table>
       </CardContent>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { Offer } from '../types';
@@ -13,23 +13,38 @@ import { Info, UtensilsCrossed } from 'lucide-react';
 export function MenuPage() {
   usePageMeta(
     'Menu',
-    'Browse every category at Pizza Offers — sizes, toppings, and active deal badges before you add to cart.'
+    'Browse every category at Pizza Offers — sizes, toppings, and active deal badges before you add to cart.',
+    'menu'
   );
 
   const { menuItems, categories, getActiveOffers, ensureMenuBrowseLoaded } = useApp();
   const navigate = useNavigate();
   const { categorySlug } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const menuItemsSectionRef = useRef<HTMLDivElement>(null);
+  const prevSelectedCategoryIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     void ensureMenuBrowseLoaded();
   }, []);
+
   const toCategorySlug = (name: string) =>
     name
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
+
+  /** Tab order follows admin “Display order” (`Category.order` ← API `display_order`). */
+  const sortedCategories = useMemo(
+    () =>
+      [...categories].sort((a, b) => {
+        const byOrder = a.order - b.order;
+        if (byOrder !== 0) return byOrder;
+        return (Number(a.id) || 0) - (Number(b.id) || 0);
+      }),
+    [categories]
+  );
 
   const selectedCategoryId = useMemo(() => {
     // Keep backward compatibility with old query links like ?category=1.
@@ -40,9 +55,41 @@ export function MenuPage() {
     return matched ? matched.id : 'all';
   }, [searchParams, categorySlug, categories]);
 
-  const filteredItems = selectedCategoryId === 'all' 
-    ? menuItems 
-    : menuItems.filter(item => item.categoryId === selectedCategoryId);
+  /** After switching category tab, bring the item grid into view (not the hero banner). */
+  useEffect(() => {
+    const prev = prevSelectedCategoryIdRef.current;
+    prevSelectedCategoryIdRef.current = selectedCategoryId;
+    if (prev === null || prev === selectedCategoryId) {
+      return;
+    }
+    const el = menuItemsSectionRef.current;
+    if (!el) return;
+    const id = window.requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [selectedCategoryId]);
+
+  const sortMenuItemsAsc = (items: typeof menuItems) =>
+    [...items].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+
+  /** “All”: categories by display order; items within each category ascending (oldest id first). */
+  const filteredItems = useMemo(() => {
+    if (selectedCategoryId !== 'all') {
+      return sortMenuItemsAsc(
+        menuItems.filter((item) => item.categoryId === selectedCategoryId)
+      );
+    }
+    const categoryOrder = new Map(sortedCategories.map((c, i) => [c.id, i]));
+    const decorated = menuItems.map((item) => ({ item }));
+    decorated.sort((a, b) => {
+      const oa = categoryOrder.has(a.item.categoryId) ? categoryOrder.get(a.item.categoryId)! : Number.MAX_SAFE_INTEGER;
+      const ob = categoryOrder.has(b.item.categoryId) ? categoryOrder.get(b.item.categoryId)! : Number.MAX_SAFE_INTEGER;
+      if (oa !== ob) return oa - ob;
+      return (Number(a.item.id) || 0) - (Number(b.item.id) || 0);
+    });
+    return decorated.map(({ item }) => item);
+  }, [selectedCategoryId, menuItems, sortedCategories]);
 
   const activeOffers = getActiveOffers();
 
@@ -83,15 +130,16 @@ export function MenuPage() {
   };
 
   return (
-    <div>
+    <div className="min-w-0">
       <HomePageBanner
         title="Explore Our Menu"
         subtitle="Browse categories, customize your favorites, and order fresh food made your way."
       />
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto min-w-0 px-4 py-8">
       <h1 className="text-4xl font-bold mb-8">Our Menu</h1>
 
       <Tabs
+        className="min-w-0 gap-2"
         value={selectedCategoryId}
         onValueChange={(value) => {
           if (value === 'all') {
@@ -108,22 +156,19 @@ export function MenuPage() {
       >
         <div
           className={[
-            'md:contents',
-            'max-md:sticky max-md:top-16 max-md:z-40',
-            'max-md:-mx-4 max-md:border-b max-md:border-gray-200 max-md:bg-white/95 max-md:px-4 max-md:py-2 max-md:shadow-sm max-md:backdrop-blur-sm',
-            'max-md:supports-[backdrop-filter]:bg-white/80 max-md:mb-4',
+            'sticky top-16 z-40 mb-8 w-full min-w-0 border-b border-gray-200 bg-white/95 py-2 shadow-sm backdrop-blur-sm',
+            'supports-[backdrop-filter]:bg-white/80',
           ].join(' ')}
         >
           <TabsList
             className={[
-              'mb-8 md:mb-8 md:w-fit',
-              'max-md:mb-0 max-md:h-auto max-md:min-h-9 max-md:w-full max-md:max-w-full',
-              'max-md:flex-nowrap max-md:justify-start max-md:overflow-x-auto max-md:rounded-xl',
-              'max-md:[&_[data-slot=tabs-trigger]]:shrink-0 max-md:[&_[data-slot=tabs-trigger]]:flex-none',
+              'mb-0 h-auto min-h-9 w-full max-w-full min-w-0 flex-nowrap justify-start overflow-x-auto overscroll-x-contain rounded-xl',
+              '[&_[data-slot=tabs-trigger]]:shrink-0 [&_[data-slot=tabs-trigger]]:flex-none',
+              'md:w-fit',
             ].join(' ')}
           >
             <TabsTrigger value="all">All</TabsTrigger>
-            {categories.map((category) => (
+            {sortedCategories.map((category) => (
               <TabsTrigger key={category.id} value={category.id}>
                 {category.name}
               </TabsTrigger>
@@ -132,7 +177,10 @@ export function MenuPage() {
         </div>
 
         <TabsContent value={selectedCategoryId}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5">
+          <div
+            ref={menuItemsSectionRef}
+            className="scroll-mt-28 md:scroll-mt-24 grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5"
+          >
             {filteredItems.map((item) => {
               const itemOffer = getOfferForItem(item.id);
               const imageSrc = item.image?.trim() ? item.image : getImageForItem(item.name);

@@ -24,7 +24,8 @@ function googleMapsOpenUrl(address: string) {
 export function LocationsPage() {
   usePageMeta(
     'Locations',
-    'Find Pizza Offers store addresses, hours, phone numbers, and map directions for pickup or visits.'
+    'Find Pizza Offers store addresses, hours, phone numbers, and map directions for pickup or visits.',
+    'locations'
   );
 
   const { locations, ensureLocationsPageLoaded } = useApp();

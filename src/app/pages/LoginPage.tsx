@@ -12,7 +12,8 @@ import { usePageMeta } from '../hooks/usePageMeta';
 export function LoginPage() {
   usePageMeta(
     'Login',
-    'Sign in or register for Pizza Offers — faster checkout, order history, and account recovery options.'
+    'Sign in or register for Pizza Offers — faster checkout, order history, and account recovery options.',
+    'login'
   );
 
   const navigate = useNavigate();
