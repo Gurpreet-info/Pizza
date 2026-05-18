@@ -34,5 +34,12 @@ class MenuItem extends Model
     {
         return $this->hasMany(Offer::class, 'reward_menu_item_id');
     }
+
+    public function optionGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(OptionGroup::class, 'menu_item_option_group')
+            ->withPivot('display_order')
+            ->withTimestamps();
+    }
 }
 

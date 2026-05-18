@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\MenuItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MenuItemController extends BaseCrudController
 {
@@ -63,6 +64,25 @@ class MenuItemController extends BaseCrudController
         return response()->json(
             $query->orderBy('name')->get()
         );
+    }
+
+    public function syncOptionGroupOrder(Request $request, int|string $menu_item): JsonResponse
+    {
+        $validated = $request->validate([
+            'option_group_ids' => ['required', 'array'],
+            'option_group_ids.*' => ['integer', 'exists:option_groups,id'],
+        ]);
+
+        MenuItem::query()->findOrFail($menu_item);
+
+        foreach ($validated['option_group_ids'] as $index => $groupId) {
+            DB::table('menu_item_option_group')
+                ->where('menu_item_id', $menu_item)
+                ->where('option_group_id', $groupId)
+                ->update(['display_order' => $index]);
+        }
+
+        return response()->json(['message' => 'Option group order updated']);
     }
 
     protected function rules(bool $isUpdate = false): array

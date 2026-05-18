@@ -44,6 +44,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('admin_or_manager')->group(function () {
         Route::apiResource('categories', CategoryController::class);
         Route::apiResource('menu-items', MenuItemController::class)->except(['index', 'show']);
+        Route::put('/menu-items/{menu_item}/option-group-order', [MenuItemController::class, 'syncOptionGroupOrder']);
         Route::get('/menu-items/without-offers', [MenuItemController::class, 'withoutOffers']);
         Route::apiResource('option-groups', OptionGroupController::class);
         Route::apiResource('options', OptionController::class);
