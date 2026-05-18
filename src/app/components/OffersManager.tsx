@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -18,10 +18,11 @@ import {
   DialogDescription,
 } from '../components/ui/dialog';
 import { toast } from 'sonner';
-import { Pencil, Trash2, Plus } from 'lucide-react';
+import { Pencil, Trash2, Plus, Search } from 'lucide-react';
 import { Offer, MenuItem, OfferKind, SpendRewardType } from '../types';
 import { useApp } from '../context/AppContext';
 import { spendGetFreeRuleSummary } from '../lib/spendOfferDisplay';
+import { offerDatesFromFormFields } from '../lib/offerValidity';
 
 interface OffersManagerProps {
   offers: Offer[];
@@ -33,6 +34,87 @@ interface OffersManagerProps {
 type MenuFetchIntent = 'add' | { editOfferId: string };
 
 const PLACEHOLDER_IMG = 'https://placehold.co/600x400/e2e8f0/64748b?text=Offer';
+
+function filterMenuItemsBySearch(items: MenuItem[], query: string): MenuItem[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter((item) => {
+    const hay = `${item.name} ${item.description} ${item.id} ${item.basePrice.toFixed(2)}`.toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+function SearchableMenuItemMultiSelect({
+  id,
+  items,
+  selectedIds,
+  onSelectedIdsChange,
+  searchValue,
+  onSearchChange,
+  emptyMessage,
+  minSize = 6,
+  maxSize = 12,
+  searchPlaceholder = 'Search menu items…',
+}: {
+  id: string;
+  items: MenuItem[];
+  selectedIds: string[];
+  onSelectedIdsChange: (ids: string[]) => void;
+  searchValue: string;
+  onSearchChange: (value: string) => void;
+  emptyMessage: string;
+  minSize?: number;
+  maxSize?: number;
+  searchPlaceholder?: string;
+}) {
+  const filteredItems = useMemo(
+    () => filterMenuItemsBySearch(items, searchValue),
+    [items, searchValue]
+  );
+
+  if (items.length === 0) {
+    return <p className="text-sm text-gray-500 text-center py-8 border rounded-md">{emptyMessage}</p>;
+  }
+
+  return (
+    <>
+      <div className="relative mb-2">
+        <Search
+          className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+          aria-hidden
+        />
+        <Input
+          type="search"
+          value={searchValue}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder={searchPlaceholder}
+          className="pl-9"
+          aria-controls={id}
+        />
+      </div>
+      <select
+        id={id}
+        multiple
+        size={Math.min(maxSize, Math.max(minSize, filteredItems.length || minSize))}
+        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        value={selectedIds.map(String)}
+        onChange={(e) => {
+          const selected = Array.from(e.target.selectedOptions, (o) => o.value);
+          onSelectedIdsChange(selected);
+        }}
+      >
+        {filteredItems.map((item) => (
+          <option key={item.id} value={String(item.id)}>
+            {item.name} — ${item.basePrice.toFixed(2)}
+          </option>
+        ))}
+      </select>
+      {searchValue.trim() && filteredItems.length === 0 ? (
+        <p className="text-muted-foreground mt-1 text-xs">No menu items match your search.</p>
+      ) : null}
+    </>
+  );
+}
 
 function offerSummary(offer: Offer): string {
   const kind: OfferKind = offer.offerKind ?? 'standard';
@@ -52,6 +134,12 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
   const [isOpen, setIsOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
   const [availableMenuItems, setAvailableMenuItems] = useState<MenuItem[]>([]);
+  const [menuItemSearch, setMenuItemSearch] = useState({
+    applicable: '',
+    bogoPay: '',
+    bogoFree: '',
+    reward: '',
+  });
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -132,6 +220,7 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
       active: true,
     });
     setEditingOffer(null);
+    setMenuItemSearch({ applicable: '', bogoPay: '', bogoFree: '', reward: '' });
   };
 
   const handleEdit = (offer: Offer) => {
@@ -256,8 +345,7 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
       applicableItemIds: kind === 'spend_get_free' ? [] : formData.applicableItemIds,
       bogoFreeItemIds: kind === 'bogo_any' ? formData.bogoFreeItemIds : [],
       showOnSlider: formData.showOnSlider,
-      validFrom: new Date(formData.validFrom),
-      validUntil: new Date(formData.validUntil),
+      ...offerDatesFromFormFields(formData.validFrom, formData.validUntil),
       active: formData.active,
     };
 
@@ -281,6 +369,10 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
   };
 
   const sortedMenuItems = [...availableMenuItems].sort((a, b) => a.name.localeCompare(b.name));
+  const filteredRewardMenuItems = useMemo(
+    () => filterMenuItemsBySearch(sortedMenuItems, menuItemSearch.reward),
+    [sortedMenuItems, menuItemSearch.reward]
+  );
 
   return (
     <Card>
@@ -461,6 +553,22 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                       {formData.spendRewardType === 'free_item' ? (
                         <div>
                           <Label htmlFor="reward-item">Free reward menu item *</Label>
+                          <div className="relative mt-2 mb-2">
+                            <Search
+                              className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+                              aria-hidden
+                            />
+                            <Input
+                              type="search"
+                              value={menuItemSearch.reward}
+                              onChange={(e) =>
+                                setMenuItemSearch((prev) => ({ ...prev, reward: e.target.value }))
+                              }
+                              placeholder="Search menu items…"
+                              className="pl-9"
+                              aria-controls="reward-item"
+                            />
+                          </div>
                           <Select
                             value={formData.rewardMenuItemId || '__none__'}
                             onValueChange={(v) =>
@@ -475,13 +583,18 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="__none__">— Select —</SelectItem>
-                              {sortedMenuItems.map((item) => (
+                              {filteredRewardMenuItems.map((item) => (
                                 <SelectItem key={item.id} value={item.id}>
                                   {item.name} — ${item.basePrice.toFixed(2)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
+                          {menuItemSearch.reward.trim() && filteredRewardMenuItems.length === 0 ? (
+                            <p className="text-muted-foreground mt-1 text-xs">
+                              No menu items match your search.
+                            </p>
+                          ) : null}
                         </div>
                       ) : formData.spendRewardType === 'percent_off' ? (
                         <div>
@@ -550,31 +663,25 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                         ? 'Items not already assigned to another offer.'
                         : 'Must add two of the same configured item to trigger BOGO.'}
                     </p>
-                    {availableMenuItems.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-8 border rounded-md">
-                        {editingOffer
+                    <SearchableMenuItemMultiSelect
+                      id="applicable-menu-items"
+                      items={availableMenuItems}
+                      selectedIds={formData.applicableItemIds}
+                      onSelectedIdsChange={(selected) =>
+                        setFormData((prev) => ({ ...prev, applicableItemIds: selected }))
+                      }
+                      searchValue={menuItemSearch.applicable}
+                      onSearchChange={(value) =>
+                        setMenuItemSearch((prev) => ({ ...prev, applicable: value }))
+                      }
+                      emptyMessage={
+                        editingOffer
                           ? 'Loading items… or no items on this offer and none free to add.'
-                          : 'No menu items without an offer. Remove items from other offers first.'}
-                      </p>
-                    ) : (
-                      <select
-                        id="applicable-menu-items"
-                        multiple
-                        size={Math.min(12, Math.max(6, availableMenuItems.length))}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        value={formData.applicableItemIds.map(String)}
-                        onChange={(e) => {
-                          const selected = Array.from(e.target.selectedOptions, (o) => o.value);
-                          setFormData((prev) => ({ ...prev, applicableItemIds: selected }));
-                        }}
-                      >
-                        {availableMenuItems.map((item) => (
-                          <option key={item.id} value={String(item.id)}>
-                            {item.name} — ${item.basePrice.toFixed(2)}
-                          </option>
-                        ))}
-                      </select>
-                    )}
+                          : 'No menu items without an offer. Remove items from other offers first.'
+                      }
+                      minSize={6}
+                      maxSize={12}
+                    />
                     <p className="text-xs text-gray-500 mt-2">
                       Selected: {formData.applicableItemIds.length} item(s)
                     </p>
@@ -590,29 +697,24 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                       <p className="text-xs text-muted-foreground mb-2">
                         Customer must add these to pay for the deal. Do not repeat these in the free list.
                       </p>
-                      {availableMenuItems.length === 0 ? (
-                        <p className="text-sm text-gray-500 text-center py-8 border rounded-md">
-                          {editingOffer ? 'Loading items…' : 'No menu items without an offer.'}
-                        </p>
-                      ) : (
-                        <select
-                          id="bogo-pay-items"
-                          multiple
-                          size={Math.min(10, Math.max(5, availableMenuItems.length))}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          value={formData.applicableItemIds.map(String)}
-                          onChange={(e) => {
-                            const selected = Array.from(e.target.selectedOptions, (o) => o.value);
-                            setFormData((prev) => ({ ...prev, applicableItemIds: selected }));
-                          }}
-                        >
-                          {availableMenuItems.map((item) => (
-                            <option key={item.id} value={String(item.id)}>
-                              {item.name} — ${item.basePrice.toFixed(2)}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                      <SearchableMenuItemMultiSelect
+                        id="bogo-pay-items"
+                        items={availableMenuItems}
+                        selectedIds={formData.applicableItemIds}
+                        onSelectedIdsChange={(selected) =>
+                          setFormData((prev) => ({ ...prev, applicableItemIds: selected }))
+                        }
+                        searchValue={menuItemSearch.bogoPay}
+                        onSearchChange={(value) =>
+                          setMenuItemSearch((prev) => ({ ...prev, bogoPay: value }))
+                        }
+                        emptyMessage={
+                          editingOffer ? 'Loading items…' : 'No menu items without an offer.'
+                        }
+                        minSize={5}
+                        maxSize={10}
+                        searchPlaceholder="Search paid (buy) items…"
+                      />
                       <p className="text-xs text-gray-500 mt-2">Selected: {formData.applicableItemIds.length}</p>
                     </div>
                     <div>
@@ -623,29 +725,24 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                         Eligible lines that can be discounted as the free side (one unit free per paid unit, cheapest free
                         units first).
                       </p>
-                      {availableMenuItems.length === 0 ? (
-                        <p className="text-sm text-gray-500 text-center py-8 border rounded-md">
-                          {editingOffer ? 'Loading items…' : 'No menu items without an offer.'}
-                        </p>
-                      ) : (
-                        <select
-                          id="bogo-free-items"
-                          multiple
-                          size={Math.min(10, Math.max(5, availableMenuItems.length))}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          value={formData.bogoFreeItemIds.map(String)}
-                          onChange={(e) => {
-                            const selected = Array.from(e.target.selectedOptions, (o) => o.value);
-                            setFormData((prev) => ({ ...prev, bogoFreeItemIds: selected }));
-                          }}
-                        >
-                          {availableMenuItems.map((item) => (
-                            <option key={`free-${item.id}`} value={String(item.id)}>
-                              {item.name} — ${item.basePrice.toFixed(2)}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                      <SearchableMenuItemMultiSelect
+                        id="bogo-free-items"
+                        items={availableMenuItems}
+                        selectedIds={formData.bogoFreeItemIds}
+                        onSelectedIdsChange={(selected) =>
+                          setFormData((prev) => ({ ...prev, bogoFreeItemIds: selected }))
+                        }
+                        searchValue={menuItemSearch.bogoFree}
+                        onSearchChange={(value) =>
+                          setMenuItemSearch((prev) => ({ ...prev, bogoFree: value }))
+                        }
+                        emptyMessage={
+                          editingOffer ? 'Loading items…' : 'No menu items without an offer.'
+                        }
+                        minSize={5}
+                        maxSize={10}
+                        searchPlaceholder="Search free items…"
+                      />
                       <p className="text-xs text-gray-500 mt-2">Selected: {formData.bogoFreeItemIds.length}</p>
                     </div>
                   </div>

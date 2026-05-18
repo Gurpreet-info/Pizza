@@ -19,13 +19,18 @@ export interface Category {
 export interface OptionGroup {
   id: string;
   name: string;
+  /** Menu items linked to this shared group (pivot). */
+  menuItemIds: string[];
+  /** First linked item — kept for older UI paths. */
   menuItemId: string;
   type: 'single' | 'multiple'; // single select or multiple select
   required: boolean;
   minSelections?: number;
   maxSelections?: number;
-  /** Display order on customize page (from API `display_order`; lower = earlier). */
+  /** Legacy global display order on option_groups (prefer pivotOrderByMenuItem per item). */
   order: number;
+  /** Per-menu-item sort order from pivot (menu_item_option_group.display_order). */
+  pivotOrderByMenuItem?: Record<string, number>;
 }
 
 export interface Option {
@@ -33,6 +38,7 @@ export interface Option {
   optionGroupId: string;
   name: string;
   price: number;
+  active: boolean;
 }
 
 /** Home banner / public status: auto uses opensAt + closesAt; force_* overrides schedule. */

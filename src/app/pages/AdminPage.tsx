@@ -13,9 +13,24 @@ import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '../components/ui/dialog';
 import { toast } from 'sonner';
-import { Pencil, Trash2, Plus, Bell } from 'lucide-react';
+import { Pencil, Trash2, Plus, Bell, Search } from 'lucide-react';
 import { MenuItem, Category, OptionGroup, Option, Location, Coupon, Offer, Order } from '../types';
 import { OptionsManager, LocationsManager, OrdersManager } from '../components/AdminComponents';
+import {
+  AdminFormSheet,
+  ADMIN_SHEET_SELECT_CONTENT_CLASS,
+  getLinkedOptionGroupIdsForMenuItem,
+  getOptionGroupMenuItemIds,
+  LinkedOptionGroupsSortableList,
+  MenuItemNewOptionGroupsEditor,
+  mergeOptionGroupSelection,
+  NewOptionGroupDraft,
+  optionGroupToRulesForm,
+  OptionGroupRulesForm,
+  OptionGroupsMultiSelect,
+  rulesFormToPartialOptionGroup,
+} from '../components/AdminFormSheet';
+import { Separator } from '../components/ui/separator';
 import { OffersManager } from '../components/OffersManager';
 import { DeliveryPostalCodesManager } from '../components/DeliveryPostalCodesManager';
 import orderReadySoundUrl from '../../assets/order-ready.mpeg?url';
@@ -59,7 +74,7 @@ export function AdminPage() {
     seoSettings,
     addMenuItem, updateMenuItem, deleteMenuItem,
     addCategory, updateCategory, deleteCategory,
-    addOptionGroup, updateOptionGroup, deleteOptionGroup,
+    addOptionGroup, updateOptionGroup, deleteOptionGroup, syncMenuItemOptionGroupOrder,
     addOption, updateOption, deleteOption,
     addLocation, updateLocation, deleteLocation,
     deliveryPostalCodesAdmin,
@@ -402,9 +417,14 @@ export function AdminPage() {
           <MenuItemsManager
             menuItems={menuItems}
             categories={categories}
+            optionGroups={optionGroups}
+            options={options}
             addMenuItem={addMenuItem}
             updateMenuItem={updateMenuItem}
             deleteMenuItem={deleteMenuItem}
+            addOptionGroup={addOptionGroup}
+            updateOptionGroup={updateOptionGroup}
+            syncMenuItemOptionGroupOrder={syncMenuItemOptionGroupOrder}
           />
         </TabsContent>
 
@@ -1214,9 +1234,25 @@ function UsersManager({
 }
 
 // Menu Items Manager Component
-function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, deleteMenuItem }: any) {
+function MenuItemsManager({
+  menuItems,
+  categories,
+  optionGroups,
+  options,
+  addMenuItem,
+  updateMenuItem,
+  deleteMenuItem,
+    addOptionGroup,
+    updateOptionGroup,
+    syncMenuItemOptionGroupOrder,
+  }: any) {
   const [isOpen, setIsOpen] = useState(false);
+  const [menuItemTableSearch, setMenuItemTableSearch] = useState('');
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [linkedOptionGroupIds, setLinkedOptionGroupIds] = useState<string[]>([]);
+  const [initialLinkedOptionGroupIds, setInitialLinkedOptionGroupIds] = useState<string[]>([]);
+  const [newOptionGroups, setNewOptionGroups] = useState<NewOptionGroupDraft[]>([]);
+  const [linkedGroupRules, setLinkedGroupRules] = useState<Record<string, OptionGroupRulesForm>>({});
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -1236,9 +1272,36 @@ function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, 
       available: true,
     });
     setEditingItem(null);
+    setLinkedOptionGroupIds([]);
+    setInitialLinkedOptionGroupIds([]);
+    setNewOptionGroups([]);
+    setLinkedGroupRules({});
+  };
+
+  const buildRulesMapForLinkedIds = (ids: string[]) => {
+    const map: Record<string, OptionGroupRulesForm> = {};
+    for (const groupId of ids) {
+      const group = optionGroups.find((g: OptionGroup) => g.id === groupId);
+      if (group) map[groupId] = optionGroupToRulesForm(group);
+    }
+    return map;
+  };
+
+  const handleLinkedOptionGroupIdsChange = (ids: string[]) => {
+    setLinkedOptionGroupIds(ids);
+    setLinkedGroupRules((prev) => {
+      const next: Record<string, OptionGroupRulesForm> = {};
+      for (const groupId of ids) {
+        next[groupId] = prev[groupId] ?? optionGroupToRulesForm(
+          optionGroups.find((g: OptionGroup) => g.id === groupId)!
+        );
+      }
+      return next;
+    });
   };
 
   const handleEdit = (item: MenuItem) => {
+    const linked = getLinkedOptionGroupIdsForMenuItem(item.id, optionGroups);
     setEditingItem(item);
     setFormData({
       name: item.name,
@@ -1248,12 +1311,59 @@ function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, 
       image: item.image,
       available: item.available,
     });
+    setLinkedOptionGroupIds(linked);
+    setInitialLinkedOptionGroupIds(linked);
+    setLinkedGroupRules(buildRulesMapForLinkedIds(linked));
+    setNewOptionGroups([]);
     setIsOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const syncOptionGroupsForMenuItem = async (menuItemId: string) => {
+    for (const groupId of linkedOptionGroupIds) {
+      const group = optionGroups.find((g: OptionGroup) => g.id === groupId);
+      if (!group) continue;
+      const ids = getOptionGroupMenuItemIds(group);
+      const rules = linkedGroupRules[groupId] ?? optionGroupToRulesForm(group);
+      const rulesPatch = rulesFormToPartialOptionGroup(rules);
+      if (!ids.includes(menuItemId)) {
+        await updateOptionGroup(groupId, { ...rulesPatch, menuItemIds: [...ids, menuItemId] });
+      } else {
+        await updateOptionGroup(groupId, rulesPatch);
+      }
+    }
+
+    for (const groupId of initialLinkedOptionGroupIds) {
+      if (linkedOptionGroupIds.includes(groupId)) continue;
+      const group = optionGroups.find((g: OptionGroup) => g.id === groupId);
+      if (!group) continue;
+      const ids = getOptionGroupMenuItemIds(group).filter((id) => id !== menuItemId);
+      await updateOptionGroup(groupId, { menuItemIds: ids });
+    }
+
+    const orderedIds = [...linkedOptionGroupIds];
+    for (const draft of newOptionGroups) {
+      if (!draft.name.trim()) {
+        throw new Error('Each new option group needs a name');
+      }
+      const payload: Omit<OptionGroup, 'id'> = {
+        name: draft.name.trim(),
+        menuItemIds: [menuItemId],
+        menuItemId: menuItemId,
+        order: 0,
+        ...rulesFormToPartialOptionGroup(draft),
+      };
+      const newId = await addOptionGroup(payload);
+      orderedIds.push(newId);
+    }
+
+    if (orderedIds.length > 0) {
+      await syncMenuItemOptionGroupOrder(menuItemId, orderedIds);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const itemData = {
       name: formData.name,
       description: formData.description,
@@ -1263,16 +1373,33 @@ function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, 
       available: formData.available,
     };
 
-    if (editingItem) {
-      updateMenuItem(editingItem.id, itemData);
-      toast.success('Menu item updated');
-    } else {
-      addMenuItem(itemData);
-      toast.success('Menu item added');
-    }
+    try {
+      let menuItemId: string;
+      if (editingItem) {
+        await updateMenuItem(editingItem.id, itemData);
+        menuItemId = editingItem.id;
+        toast.success('Menu item updated');
+      } else {
+        menuItemId = await addMenuItem(itemData);
+        toast.success('Menu item added');
+      }
 
-    setIsOpen(false);
-    resetForm();
+      if (
+        linkedOptionGroupIds.length > 0 ||
+        newOptionGroups.length > 0 ||
+        initialLinkedOptionGroupIds.length > 0
+      ) {
+        await syncOptionGroupsForMenuItem(menuItemId);
+        if (newOptionGroups.some((d) => d.name.trim())) {
+          toast.success('Option groups saved for this item');
+        }
+      }
+
+      setIsOpen(false);
+      resetForm();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save menu item');
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -1282,29 +1409,63 @@ function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, 
     }
   };
 
+  const openAddSheet = () => {
+    resetForm();
+    setIsOpen(true);
+  };
+
+  const categoryNameById = useMemo(
+    () => new Map(categories.map((c: Category) => [c.id, c.name])),
+    [categories]
+  );
+
+  const menuItemsTableRows = useMemo(() => {
+    const q = menuItemTableSearch.trim().toLowerCase();
+    if (!q) return menuItems;
+    return menuItems.filter((item: MenuItem) => {
+      const categoryName = categoryNameById.get(item.categoryId) ?? '';
+      const hay = [
+        item.name,
+        item.description,
+        categoryName,
+        item.basePrice.toFixed(2),
+        String(item.basePrice),
+        item.available ? 'available' : 'unavailable',
+        item.id,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [menuItems, categoryNameById, menuItemTableSearch]);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Menu Items</CardTitle>
-        <Dialog open={isOpen} onOpenChange={(open) => {
-          setIsOpen(open);
-          if (!open) resetForm();
-        }}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Item
+        <Button type="button" onClick={openAddSheet}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Item
+        </Button>
+        <AdminFormSheet
+          open={isOpen}
+          onOpenChange={(open) => {
+            setIsOpen(open);
+            if (!open) resetForm();
+          }}
+          title={editingItem ? 'Edit Menu Item' : 'Add Menu Item'}
+          description={
+            editingItem
+              ? 'Edit item details and manage option groups shown on the customize page.'
+              : 'Add a menu item and optionally link or create option groups.'
+          }
+          footer={
+            <Button type="submit" form="menu-item-form" className="w-full sm:w-auto">
+              {editingItem ? 'Update' : 'Add'} Item
             </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingItem ? 'Edit' : 'Add'} Menu Item</DialogTitle>
-              <DialogDescription>
-                {editingItem ? 'Edit the details of the menu item.' : 'Add a new menu item to the menu.'}
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit}>
-              <div className="grid gap-4 py-4">
+          }
+        >
+          <form id="menu-item-form" onSubmit={handleSubmit} className="grid gap-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="name">Name *</Label>
@@ -1317,11 +1478,15 @@ function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, 
                   </div>
                   <div>
                     <Label htmlFor="category">Category *</Label>
-                    <Select value={formData.categoryId} onValueChange={(value) => setFormData({ ...formData, categoryId: value })}>
+                    <Select
+                      modal={false}
+                      value={formData.categoryId}
+                      onValueChange={(value) => setFormData((prev) => ({ ...prev, categoryId: value }))}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className={ADMIN_SHEET_SELECT_CONTENT_CLASS}>
                         {categories.map((cat: Category) => (
                           <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                         ))}
@@ -1364,19 +1529,75 @@ function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, 
                   <Switch
                     id="available"
                     checked={formData.available}
-                    onCheckedChange={(checked) => setFormData({ ...formData, available: checked })}
+                    onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, available: checked }))}
                   />
                   <Label htmlFor="available">Available</Label>
                 </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit">{editingItem ? 'Update' : 'Add'} Item</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+
+                <Separator />
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-base">Option groups</Label>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Link existing groups or create new ones. Drag linked groups to set the order on the customize page.
+                    </p>
+                  </div>
+                  <OptionGroupsMultiSelect
+                    optionGroups={optionGroups}
+                    value={linkedOptionGroupIds}
+                    onChange={(ids) =>
+                      handleLinkedOptionGroupIdsChange(mergeOptionGroupSelection(linkedOptionGroupIds, ids))
+                    }
+                    label="Link existing groups"
+                    description="Groups already used on other items can be shared with this item."
+                    showSelectedBadges={false}
+                  />
+                  <div className="space-y-2">
+                    <Label className="text-sm">Linked groups (drag to reorder)</Label>
+                    <LinkedOptionGroupsSortableList
+                      optionGroups={optionGroups}
+                      options={options}
+                      orderedIds={linkedOptionGroupIds}
+                      onReorder={setLinkedOptionGroupIds}
+                      onRemove={(groupId) => {
+                        setLinkedOptionGroupIds((prev) => prev.filter((id) => id !== groupId));
+                        setLinkedGroupRules((prev) => {
+                          const next = { ...prev };
+                          delete next[groupId];
+                          return next;
+                        });
+                      }}
+                      rulesByGroupId={linkedGroupRules}
+                      onRulesChange={(groupId, patch) =>
+                        setLinkedGroupRules((prev) => ({
+                          ...prev,
+                          [groupId]: { ...(prev[groupId] ?? optionGroupToRulesForm(
+                            optionGroups.find((g: OptionGroup) => g.id === groupId)!
+                          )), ...patch },
+                        }))
+                      }
+                    />
+                  </div>
+                  <MenuItemNewOptionGroupsEditor
+                    drafts={newOptionGroups}
+                    onChange={setNewOptionGroups}
+                  />
+                </div>
+          </form>
+        </AdminFormSheet>
       </CardHeader>
       <CardContent>
+        <div className="relative mb-4">
+          <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" aria-hidden />
+          <Input
+            type="search"
+            value={menuItemTableSearch}
+            onChange={(e) => setMenuItemTableSearch(e.target.value)}
+            placeholder="Search by name, category, price, status…"
+            className="pl-9"
+            aria-label="Search menu items"
+          />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -1388,12 +1609,17 @@ function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, 
             </TableRow>
           </TableHeader>
           <TableBody>
-            {menuItems.map((item: MenuItem) => {
-              const category = categories.find((c: Category) => c.id === item.categoryId);
-              return (
+            {menuItemsTableRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-muted-foreground text-center py-8">
+                  No menu items match your search.
+                </TableCell>
+              </TableRow>
+            ) : (
+              menuItemsTableRows.map((item: MenuItem) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell>{category?.name}</TableCell>
+                  <TableCell>{categoryNameById.get(item.categoryId) ?? '—'}</TableCell>
                   <TableCell>${item.basePrice.toFixed(2)}</TableCell>
                   <TableCell>
                     <Badge variant={item.available ? 'default' : 'secondary'}>
@@ -1411,8 +1637,8 @@ function MenuItemsManager({ menuItems, categories, addMenuItem, updateMenuItem, 
                     </div>
                   </TableCell>
                 </TableRow>
-              );
-            })}
+              ))
+            )}
           </TableBody>
         </Table>
       </CardContent>

@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { applyOffersToCart } from '../lib/applyOffers';
+import {
+  coerceOfferActive,
+  isOfferActiveNow,
+  parseOfferValidFrom,
+  parseOfferValidUntil,
+} from '../lib/offerValidity';
 import { reconcileBogoAnyAutoLines } from '../lib/bogoAnyCart';
 import { reconcileBogoSameAutoLines } from '../lib/bogoSameCart';
 import { CartItem, Category, Coupon, DeliveryPostalCode, Location, MenuItem, Offer, Option, OptionGroup, Order, SeoSetting, SelectedOption, User } from '../types';
@@ -67,17 +73,18 @@ interface AppContextType {
   seoSettings: SeoSetting[];
 
   // Admin functions
-  addMenuItem: (item: Omit<MenuItem, 'id'>) => void;
-  updateMenuItem: (id: string, item: Partial<MenuItem>) => void;
+  addMenuItem: (item: Omit<MenuItem, 'id'>) => Promise<string>;
+  updateMenuItem: (id: string, item: Partial<MenuItem>) => Promise<void>;
   deleteMenuItem: (id: string) => void;
   
   addCategory: (category: Omit<Category, 'id'>) => void;
   updateCategory: (id: string, category: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
   
-  addOptionGroup: (group: Omit<OptionGroup, 'id'>) => void;
-  updateOptionGroup: (id: string, group: Partial<OptionGroup>) => void;
-  deleteOptionGroup: (id: string) => void;
+  addOptionGroup: (group: Omit<OptionGroup, 'id'>) => Promise<string>;
+  syncMenuItemOptionGroupOrder: (menuItemId: string, optionGroupIds: string[]) => Promise<void>;
+  updateOptionGroup: (id: string, group: Partial<OptionGroup>) => Promise<void>;
+  deleteOptionGroup: (id: string) => Promise<void>;
   
   addOption: (option: Omit<Option, 'id'>) => void;
   updateOption: (id: string, option: Partial<Option>) => void;
@@ -220,22 +227,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     available: Boolean(raw.available),
   });
 
-  const toOptionGroup = (raw: any): OptionGroup => ({
-    id: String(raw.id),
-    name: raw.name,
-    menuItemId: String(raw.menu_item_id),
-    type: raw.type,
-    required: Boolean(raw.required),
-    minSelections: raw.min_selections ?? undefined,
-    maxSelections: raw.max_selections ?? undefined,
-    order: raw.display_order ?? 0,
-  });
+  const toOptionGroup = (raw: any): OptionGroup => {
+    const menuItemsRaw = (raw.menu_items ?? raw.menuItems) || [];
+    const menuItemIds = menuItemsRaw
+      .map((m: { id: number | string }) => String(m.id))
+      .filter(Boolean);
+    const pivotOrderByMenuItem: Record<string, number> = {};
+    menuItemsRaw.forEach((m: { id: number | string; pivot?: { display_order?: number }; display_order?: number }) => {
+      const mid = String(m.id);
+      pivotOrderByMenuItem[mid] =
+        m.pivot?.display_order ?? m.display_order ?? pivotOrderByMenuItem[mid] ?? 0;
+    });
+    const legacyId =
+      raw.menu_item_id != null && raw.menu_item_id !== ''
+        ? String(raw.menu_item_id)
+        : menuItemIds[0] ?? '';
+    const ids = menuItemIds.length > 0 ? menuItemIds : legacyId ? [legacyId] : [];
+    return {
+      id: String(raw.id),
+      name: raw.name,
+      menuItemIds: ids,
+      menuItemId: ids[0] ?? '',
+      type: raw.type,
+      required: Boolean(raw.required),
+      minSelections: raw.min_selections ?? undefined,
+      maxSelections: raw.max_selections ?? undefined,
+      order: raw.display_order ?? 0,
+      pivotOrderByMenuItem,
+    };
+  };
 
   const toOption = (raw: any): Option => ({
     id: String(raw.id),
     optionGroupId: String(raw.option_group_id),
     name: raw.name,
     price: Number(raw.price ?? 0),
+    active: raw.active !== undefined ? Boolean(raw.active) : true,
   });
 
   const toLocation = (raw: any): Location => ({
@@ -301,9 +328,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     bogoFreeItemIds: ((raw.bogo_free_menu_items ?? raw.bogoFreeMenuItems) || []).map(
       (m: { id: number | string }) => String(m.id)
     ),
-    validFrom: new Date(raw.valid_from),
-    validUntil: new Date(raw.valid_until),
-    active: Boolean(raw.active),
+    validFrom: parseOfferValidFrom(raw.valid_from),
+    validUntil: parseOfferValidUntil(raw.valid_until),
+    active: coerceOfferActive(raw.active),
   };
 };
 
@@ -934,8 +961,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     void request('/auth/logout', { method: 'POST' }).catch(() => undefined);
   };
 
-  const addMenuItem = (item: Omit<MenuItem, 'id'>) => {
-    void request('/menu-items', {
+  const addMenuItem = async (item: Omit<MenuItem, 'id'>) => {
+    const raw = (await request('/menu-items', {
       method: 'POST',
       body: JSON.stringify({
         name: item.name,
@@ -945,11 +972,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         image: item.image,
         available: item.available,
       }),
-    }).then(() => ensureMenuItems(true));
+    })) as { id: number | string };
+    await ensureMenuItems(true);
+    return String(raw.id);
   };
 
-  const updateMenuItem = (id: string, item: Partial<MenuItem>) => {
-    void request(`/menu-items/${id}`, {
+  const updateMenuItem = async (id: string, item: Partial<MenuItem>) => {
+    await request(`/menu-items/${id}`, {
       method: 'PUT',
       body: JSON.stringify({
         name: item.name,
@@ -959,7 +988,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         image: item.image,
         available: item.available,
       }),
-    }).then(() => ensureMenuItems(true));
+    });
+    await ensureMenuItems(true);
   };
 
   const deleteMenuItem = (id: string) => {
@@ -996,24 +1026,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
-  const addOptionGroup = (group: Omit<OptionGroup, 'id'>) => {
-    void request('/option-groups', {
+  const addOptionGroup = async (group: Omit<OptionGroup, 'id'>) => {
+    const menuItemIds = (group.menuItemIds?.length ? group.menuItemIds : group.menuItemId ? [group.menuItemId] : [])
+      .map((id) => Number(id))
+      .filter((n) => !Number.isNaN(n));
+    const raw = (await request('/option-groups', {
       method: 'POST',
       body: JSON.stringify({
-        menu_item_id: Number(group.menuItemId),
+        menu_item_ids: menuItemIds,
         name: group.name,
         type: group.type,
-        required: group.required,
-        min_selections: group.minSelections,
-        max_selections: group.maxSelections,
+        required: group.required ?? false,
+        min_selections: group.minSelections ?? null,
+        max_selections: group.maxSelections ?? null,
         display_order: group.order ?? 0,
       }),
-    }).then(reloadCustomization);
+    })) as { id: number | string };
+    await reloadCustomization();
+    return String(raw.id);
   };
 
-  const updateOptionGroup = (id: string, group: Partial<OptionGroup>) => {
+  const syncMenuItemOptionGroupOrder = async (menuItemId: string, optionGroupIds: string[]) => {
+    await request(`/menu-items/${menuItemId}/option-group-order`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        option_group_ids: optionGroupIds.map((id) => Number(id)).filter((n) => !Number.isNaN(n)),
+      }),
+    });
+    await reloadCustomization();
+  };
+
+  const updateOptionGroup = async (id: string, group: Partial<OptionGroup>) => {
     const body: Record<string, unknown> = {};
-    if (group.menuItemId !== undefined) body.menu_item_id = Number(group.menuItemId);
+    if (group.menuItemIds !== undefined) {
+      body.menu_item_ids = group.menuItemIds.map((mid) => Number(mid)).filter((n) => !Number.isNaN(n));
+    } else if (group.menuItemId !== undefined && group.menuItemId !== '') {
+      body.menu_item_ids = [Number(group.menuItemId)];
+    }
     if (group.name !== undefined) body.name = group.name;
     if (group.type !== undefined) body.type = group.type;
     if (group.required !== undefined) body.required = group.required;
@@ -1021,14 +1070,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (group.maxSelections !== undefined) body.max_selections = group.maxSelections;
     if (group.order !== undefined) body.display_order = group.order;
 
-    void request(`/option-groups/${id}`, {
+    await request(`/option-groups/${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),
-    }).then(reloadCustomization);
+    });
+    await reloadCustomization();
   };
 
-  const deleteOptionGroup = (id: string) => {
-    void request(`/option-groups/${id}`, { method: 'DELETE' }).then(reloadCustomization);
+  const deleteOptionGroup = async (id: string) => {
+    await request(`/option-groups/${id}`, { method: 'DELETE' });
+    await reloadCustomization();
   };
 
   const addOption = (option: Omit<Option, 'id'>) => {
@@ -1038,18 +1089,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         option_group_id: Number(option.optionGroupId),
         name: option.name,
         price: option.price,
+        active: option.active !== false,
       }),
     }).then(reloadCustomization);
   };
 
   const updateOption = (id: string, option: Partial<Option>) => {
+    const body: Record<string, unknown> = {};
+    if (option.optionGroupId !== undefined) body.option_group_id = Number(option.optionGroupId);
+    if (option.name !== undefined) body.name = option.name;
+    if (option.price !== undefined) body.price = option.price;
+    if (option.active !== undefined) body.active = option.active;
     void request(`/options/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({
-        option_group_id: option.optionGroupId ? Number(option.optionGroupId) : undefined,
-        name: option.name,
-        price: option.price,
-      }),
+      body: JSON.stringify(body),
     }).then(reloadCustomization);
   };
 
@@ -1280,10 +1333,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     void request(`/offers/${id}`, { method: 'DELETE' }).then(() => ensureOffers(true));
   };
 
-  const getActiveOffers = () => {
-    const now = new Date();
-    return offers.filter(o => o.active && new Date(o.validFrom) <= now && new Date(o.validUntil) >= now);
-  };
+  const getActiveOffers = () => offers.filter((o) => isOfferActiveNow(o));
 
   const applyOfferToCart = (cartItems: CartItem[]) =>
     applyOffersToCart(cartItems, getActiveOffers());
@@ -1422,6 +1472,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addOptionGroup,
         updateOptionGroup,
         deleteOptionGroup,
+        syncMenuItemOptionGroupOrder,
         addOption,
         updateOption,
         deleteOption,

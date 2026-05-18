@@ -6,6 +6,7 @@ import { Offer } from '../types';
 import { spendGetFreeRuleSummary } from '../lib/spendOfferDisplay';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { HomePageBanner } from '../components/HomePageBanner';
+import { isOfferActiveNow } from '../lib/offerValidity';
 
 export function OffersPage() {
   usePageMeta(
@@ -20,14 +21,7 @@ export function OffersPage() {
     void ensureOffersMarketingLoaded();
   }, []);
 
-  const activeOffers = offers.filter(offer => {
-    const now = new Date();
-    return (
-      offer.active &&
-      new Date(offer.validFrom) <= now &&
-      new Date(offer.validUntil) >= now
-    );
-  });
+  const activeOffers = offers.filter((offer) => isOfferActiveNow(offer));
 
   const getApplicableItems = (offer: Offer) => {
     return menuItems.filter((item) => offer.applicableItemIds.includes(item.id));

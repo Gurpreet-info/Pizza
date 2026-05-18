@@ -6,6 +6,7 @@ import { useApp } from '../context/AppContext';
 import { Offer } from '../types';
 import { spendGetFreeSliderBadge } from '../lib/spendOfferDisplay';
 import { computeStoreFrontBadges } from '../lib/storeHours';
+import { isOfferActiveNow } from '../lib/offerValidity';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { Clock, MapPin, Phone, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -42,11 +43,9 @@ export function HomePage() {
   );
 
   const sliderOffers = useMemo(() => {
-    const now = new Date();
-    return offers.filter((offer) => {
-      if (!offer.showOnSlider || !offer.active) return false;
-      return new Date(offer.validFrom) <= now && new Date(offer.validUntil) >= now;
-    });
+    return offers.filter(
+      (offer) => offer.showOnSlider && isOfferActiveNow(offer)
+    );
   }, [offers]);
 
   useEffect(() => {

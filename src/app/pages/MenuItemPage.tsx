@@ -9,9 +9,27 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { toast } from 'sonner';
-import { CartItem, SelectedOption, Option } from '../types';
+import { CartItem, SelectedOption, Option, OptionGroup } from '../types';
+import { getOptionGroupOrderForMenuItem } from '../components/AdminFormSheet';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { Minus, Plus } from 'lucide-react';
+import { cn } from '../components/ui/utils';
+
+function getSelectedCount(groupId: string, selectedOptions: SelectedOption[]): number {
+  return selectedOptions.find((so) => so.optionGroupId === groupId)?.options.length ?? 0;
+}
+
+function formatGroupLimits(group: OptionGroup): string | null {
+  if (group.type !== 'multiple') return null;
+  const parts: string[] = [];
+  if (group.minSelections != null && group.minSelections > 0) {
+    parts.push(`min ${group.minSelections}`);
+  }
+  if (group.maxSelections != null && group.maxSelections > 0) {
+    parts.push(`max ${group.maxSelections}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
 
 export function MenuItemPage() {
   const { id } = useParams();
@@ -41,9 +59,12 @@ export function MenuItemPage() {
   usePageMeta(menuItem ? menuItem.name : 'Menu item', metaDescription, 'menu_item');
 
   const itemOptionGroups = useMemo(() => {
-    const list = optionGroups.filter((og) => og.menuItemId === id);
-    return [...list].sort((a, b) => {
-      const byOrder = a.order - b.order;
+    const list = optionGroups.filter(
+      (og) => og.menuItemIds.includes(id!) || og.menuItemId === id
+    );
+    return [...list].sort((a: OptionGroup, b: OptionGroup) => {
+      const byOrder =
+        getOptionGroupOrderForMenuItem(a, id!) - getOptionGroupOrderForMenuItem(b, id!);
       if (byOrder !== 0) return byOrder;
       return (Number(a.id) || 0) - (Number(b.id) || 0);
     });
@@ -53,6 +74,7 @@ export function MenuItemPage() {
   const optionsByGroupId = useMemo(() => {
     const map = new Map<string, Option[]>();
     for (const opt of options) {
+      if (!opt.active) continue;
       const list = map.get(opt.optionGroupId) ?? [];
       list.push(opt);
       map.set(opt.optionGroupId, list);
@@ -146,9 +168,14 @@ export function MenuItemPage() {
   const handleMultipleSelect = (groupId: string, groupName: string, option: Option, checked: boolean) => {
     setSelectedOptions(prev => {
       const existingGroup = prev.find(so => so.optionGroupId === groupId);
-      
+      const group = itemOptionGroups.find(og => og.id === groupId);
+
       if (!existingGroup) {
         if (checked) {
+          if (group?.maxSelections != null && group.maxSelections > 0 && 1 > group.maxSelections) {
+            toast.error(`You can only select up to ${group.maxSelections} option(s)`);
+            return prev;
+          }
           return [...prev, {
             optionGroupId: groupId,
             optionGroupName: groupName,
@@ -159,9 +186,8 @@ export function MenuItemPage() {
       }
 
       if (checked) {
-        const group = itemOptionGroups.find(og => og.id === groupId);
-        if (group?.maxSelections && existingGroup.options.length >= group.maxSelections) {
-          toast.error(`You can only select up to ${group.maxSelections} options`);
+        if (group?.maxSelections != null && group.maxSelections > 0 && existingGroup.options.length >= group.maxSelections) {
+          toast.error(`You can only select up to ${group.maxSelections} option(s)`);
           return prev;
         }
         return prev.map(so => 
@@ -208,8 +234,23 @@ export function MenuItemPage() {
         errors.push(`Please select ${group.name}`);
       }
       
-      if (group.minSelections && (!selectedGroup || selectedGroup.options.length < group.minSelections)) {
+      if (
+        group.type === 'multiple' &&
+        group.minSelections != null &&
+        group.minSelections > 0 &&
+        (!selectedGroup || selectedGroup.options.length < group.minSelections)
+      ) {
         errors.push(`Please select at least ${group.minSelections} option(s) for ${group.name}`);
+      }
+
+      if (
+        group.type === 'multiple' &&
+        group.maxSelections != null &&
+        group.maxSelections > 0 &&
+        selectedGroup &&
+        selectedGroup.options.length > group.maxSelections
+      ) {
+        errors.push(`Please select at most ${group.maxSelections} option(s) for ${group.name}`);
       }
     });
     
@@ -292,20 +333,41 @@ export function MenuItemPage() {
           <div className="space-y-6 mb-6">
             {itemOptionGroups.map(group => {
               const groupOptions = optionsByGroupId.get(group.id) ?? [];
-              
+              const selectedCount = getSelectedCount(group.id, selectedOptions);
+              const limitsLabel = formatGroupLimits(group);
+              const atMax =
+                group.type === 'multiple' &&
+                group.maxSelections != null &&
+                group.maxSelections > 0 &&
+                selectedCount >= group.maxSelections;
+
               return (
                 <Card key={group.id}>
                   <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <span>
+                    <CardTitle className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="flex flex-wrap items-center gap-2">
                         {group.name}
-                        {group.required && <span className="text-red-500 ml-1">*</span>}
+                        {group.required ? (
+                          <span
+                            className="rounded text-xs font-medium leading-none"
+                            style={{
+                              color: '#f54a00',
+                              backgroundColor: 'rgb(232, 232, 232)',
+                              padding: '3px 8px',
+                            }}
+                          >
+                            Required
+                          </span>
+                        ) : null}
                       </span>
-                      {group.type === 'multiple' && group.maxSelections && (
-                        <span className="text-sm font-normal text-gray-500">
-                          (Max {group.maxSelections})
-                        </span>
-                      )}
+                      <span className="text-sm font-normal text-gray-500">
+                        {group.type === 'multiple' ? (
+                          <>
+                            {selectedCount} selected
+                            {limitsLabel ? ` (${limitsLabel})` : ''}
+                          </>
+                        ) : null}
+                      </span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -333,17 +395,27 @@ export function MenuItemPage() {
                       </RadioGroup>
                     ) : (
                       <div className="space-y-2">
-                        {groupOptions.map(option => (
+                        {groupOptions.map(option => {
+                          const isSelected = isOptionSelected(group.id, option.id);
+                          const disableUnchecked = atMax && !isSelected;
+                          return (
                           <div key={option.id} className="flex items-center justify-between py-2">
                             <div className="flex items-center space-x-2">
                               <Checkbox
                                 id={option.id}
-                                checked={isOptionSelected(group.id, option.id)}
+                                checked={isSelected}
+                                disabled={disableUnchecked}
                                 onCheckedChange={(checked) => 
                                   handleMultipleSelect(group.id, group.name, option, checked as boolean)
                                 }
                               />
-                              <Label htmlFor={option.id} className="cursor-pointer">
+                              <Label
+                                htmlFor={option.id}
+                                className={cn(
+                                  'cursor-pointer',
+                                  disableUnchecked && 'cursor-not-allowed opacity-50'
+                                )}
+                              >
                                 {option.name}
                               </Label>
                             </div>
@@ -351,7 +423,8 @@ export function MenuItemPage() {
                               <span className="text-gray-600">+${option.price.toFixed(2)}</span>
                             ) : null}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </CardContent>
