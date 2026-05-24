@@ -56,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('coupons', CouponController::class);
         Route::get('/offers/{offer}/menu-items', [OfferController::class, 'attachedMenuItems']);
         Route::get('/offers/{offer}/bogo-free-menu-items', [OfferController::class, 'attachedBogoFreeMenuItems']);
+        Route::post('/offers/{offer}/menu-items', [OfferController::class, 'attachMenuItems']);
         Route::apiResource('offers', OfferController::class)->except(['index', 'show']);
         Route::get('/orders', [OrderController::class, 'index']);
         Route::get('/orders/dashboard-stats', [OrderController::class, 'dashboardStats']);

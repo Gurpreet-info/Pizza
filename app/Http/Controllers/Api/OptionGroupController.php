@@ -92,6 +92,7 @@ class OptionGroupController extends BaseCrudController
             'required' => ['nullable', 'boolean'],
             'min_selections' => ['nullable', 'integer', 'min:0'],
             'max_selections' => ['nullable', 'integer', 'min:0'],
+            'allow_repeat_selections' => ['nullable', 'boolean'],
             'display_order' => ['nullable', 'integer', 'min:0'],
             'menu_item_ids' => [
                 $isUpdate ? 'sometimes' : 'required',

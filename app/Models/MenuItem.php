@@ -3,12 +3,22 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MenuItem extends Model
 {
-    protected $fillable = ['category_id', 'name', 'description', 'base_price', 'image', 'available'];
+    protected $fillable = ['name', 'description', 'base_price', 'image', 'available'];
+
+    public function categories(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Category::class,
+            'category_menu_item',
+            'menu_item_id',
+            'category_id',
+        )->withTimestamps();
+    }
 
     public function offers(): BelongsToMany
     {
@@ -42,4 +52,3 @@ class MenuItem extends Model
             ->withTimestamps();
     }
 }
-

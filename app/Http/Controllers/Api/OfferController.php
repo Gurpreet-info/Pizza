@@ -37,6 +37,47 @@ class OfferController extends BaseCrudController
         }
     }
 
+    protected function offerSupportsMultipleMenuItems(string $kind): bool
+    {
+        return in_array($kind, ['standard', 'bogo_same'], true);
+    }
+
+    /**
+     * Resolve paid-menu-item ids for standard / bogo_same (full list + optional append).
+     *
+     * @return array<int>
+     */
+    protected function resolveMenuItemIdsForMultiItemOffer(
+        Request $request,
+        ?int $currentOfferId,
+        bool $isUpdate
+    ): array {
+        $existing = [];
+        if ($currentOfferId !== null) {
+            $offer = Offer::query()->find($currentOfferId);
+            if ($offer) {
+                $existing = $offer->menuItems()->pluck('menu_items.id')->map(fn ($id) => (int) $id)->all();
+            }
+        }
+
+        $fromMenuItemIds = $request->has('menu_item_ids')
+            ? array_map('intval', $request->input('menu_item_ids', []))
+            : ($isUpdate ? $existing : []);
+
+        $toAdd = array_map('intval', $request->input('add_menu_item_ids', []));
+
+        return array_values(array_unique(array_merge($fromMenuItemIds, $toAdd)));
+    }
+
+    protected function assertMultiItemMenuIdsPresent(array $menuItemIds): void
+    {
+        if ($menuItemIds === []) {
+            throw ValidationException::withMessages([
+                'menu_item_ids' => ['Select at least one menu item for this offer.'],
+            ]);
+        }
+    }
+
     protected function modelClass(): string
     {
         return Offer::class;
@@ -90,16 +131,28 @@ class OfferController extends BaseCrudController
     protected function validatedPayloadForKind(Request $request, string $kind, array $base, ?int $currentOfferId = null): array
     {
         if ($kind === 'standard') {
+            $isUpdate = $currentOfferId !== null;
             $extra = $request->validate([
                 'discount_type' => ['required', 'in:percentage,fixed'],
                 'discount_value' => ['required', 'numeric', 'min:0'],
-                'menu_item_ids' => ['required', 'array', 'min:1'],
+                'menu_item_ids' => [
+                    $isUpdate ? 'sometimes' : 'required_without:add_menu_item_ids',
+                    'array',
+                    'min:1',
+                ],
                 'menu_item_ids.*' => ['integer', 'exists:menu_items,id'],
+                'add_menu_item_ids' => [
+                    $isUpdate ? 'sometimes' : 'required_without:menu_item_ids',
+                    'array',
+                    'min:1',
+                ],
+                'add_menu_item_ids.*' => ['integer', 'exists:menu_items,id'],
             ]);
             $attrs = array_merge($base, $extra);
-            $sync = array_map('intval', $extra['menu_item_ids']);
+            unset($attrs['menu_item_ids'], $attrs['add_menu_item_ids']);
+            $sync = $this->resolveMenuItemIdsForMultiItemOffer($request, $currentOfferId, $isUpdate);
+            $this->assertMultiItemMenuIdsPresent($sync);
             $this->assertMenuItemsAvailable($sync, $currentOfferId);
-            unset($attrs['menu_item_ids']);
             $attrs['min_spend'] = null;
             $attrs['reward_menu_item_id'] = null;
 
@@ -107,15 +160,27 @@ class OfferController extends BaseCrudController
         }
 
         if ($kind === 'bogo_same') {
+            $isUpdate = $currentOfferId !== null;
             $request->validate([
-                'menu_item_ids' => ['required', 'array', 'min:1'],
+                'menu_item_ids' => [
+                    $isUpdate ? 'sometimes' : 'required_without:add_menu_item_ids',
+                    'array',
+                    'min:1',
+                ],
                 'menu_item_ids.*' => ['integer', 'exists:menu_items,id'],
+                'add_menu_item_ids' => [
+                    $isUpdate ? 'sometimes' : 'required_without:menu_item_ids',
+                    'array',
+                    'min:1',
+                ],
+                'add_menu_item_ids.*' => ['integer', 'exists:menu_items,id'],
             ]);
             $base['discount_type'] = 'fixed';
             $base['discount_value'] = 0;
             $base['min_spend'] = null;
             $base['reward_menu_item_id'] = null;
-            $sync = array_map('intval', $request->input('menu_item_ids', []));
+            $sync = $this->resolveMenuItemIdsForMultiItemOffer($request, $currentOfferId, $isUpdate);
+            $this->assertMultiItemMenuIdsPresent($sync);
             $this->assertMenuItemsAvailable($sync, $currentOfferId);
 
             return [$base, $sync, []];
@@ -257,5 +322,37 @@ class OfferController extends BaseCrudController
         $offer->bogoFreeMenuItems()->sync($bogoFreeSync);
 
         return response()->json($offer->fresh()->load(['menuItems', 'rewardMenuItem', 'bogoFreeMenuItems']));
+    }
+
+    /**
+     * Attach more menu items to an existing standard or bogo_same offer (merge, no replace).
+     */
+    public function attachMenuItems(Request $request, int|string $offer): JsonResponse
+    {
+        $model = Offer::query()->findOrFail($offer);
+
+        if (! $this->offerSupportsMultipleMenuItems($model->offer_kind)) {
+            throw ValidationException::withMessages([
+                'offer_kind' => [
+                    'Only standard and buy-one-get-one-same offers support multiple menu items on one offer.',
+                ],
+            ]);
+        }
+
+        $validated = $request->validate([
+            'menu_item_ids' => ['required', 'array', 'min:1'],
+            'menu_item_ids.*' => ['integer', 'exists:menu_items,id'],
+        ]);
+
+        $existing = $model->menuItems()->pluck('menu_items.id')->map(fn ($id) => (int) $id)->all();
+        $incoming = array_map('intval', $validated['menu_item_ids']);
+        $merged = array_values(array_unique(array_merge($existing, $incoming)));
+
+        $this->assertMenuItemsAvailable($merged, (int) $model->id);
+        $model->menuItems()->sync($merged);
+
+        return response()->json(
+            $model->fresh()->load(['menuItems', 'rewardMenuItem', 'bogoFreeMenuItems'])
+        );
     }
 }

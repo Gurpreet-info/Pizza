@@ -3,19 +3,24 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Option extends Model
 {
-    protected $fillable = ['option_group_id', 'name', 'price', 'active'];
+    protected $fillable = ['name', 'price', 'active'];
 
     protected $casts = [
         'price' => 'decimal:2',
         'active' => 'boolean',
     ];
 
-    public function optionGroup(): BelongsTo
+    public function optionGroups(): BelongsToMany
     {
-        return $this->belongsTo(OptionGroup::class);
+        return $this->belongsToMany(
+            OptionGroup::class,
+            'option_group_option',
+            'option_id',
+            'option_group_id',
+        )->withTimestamps();
     }
 }
