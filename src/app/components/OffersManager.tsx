@@ -7,6 +7,8 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { Badge } from '../components/ui/badge';
+import { Checkbox } from '../components/ui/checkbox';
+import { cn } from '../components/ui/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import {
   Dialog,
@@ -52,8 +54,7 @@ function SearchableMenuItemMultiSelect({
   searchValue,
   onSearchChange,
   emptyMessage,
-  minSize = 6,
-  maxSize = 12,
+  maxListHeightClass = 'max-h-52',
   searchPlaceholder = 'Search menu items…',
 }: {
   id: string;
@@ -63,14 +64,31 @@ function SearchableMenuItemMultiSelect({
   searchValue: string;
   onSearchChange: (value: string) => void;
   emptyMessage: string;
-  minSize?: number;
-  maxSize?: number;
+  maxListHeightClass?: string;
   searchPlaceholder?: string;
 }) {
   const filteredItems = useMemo(
     () => filterMenuItemsBySearch(items, searchValue),
     [items, searchValue]
   );
+
+  const toggleItem = (itemId: string, checked: boolean) => {
+    onSelectedIdsChange(
+      checked
+        ? [...new Set([...selectedIds, itemId])]
+        : selectedIds.filter((x) => x !== itemId)
+    );
+  };
+
+  const selectAllShown = () => {
+    const ids = filteredItems.map((item) => item.id);
+    onSelectedIdsChange([...new Set([...selectedIds, ...ids])]);
+  };
+
+  const clearAllShown = () => {
+    const remove = new Set(filteredItems.map((item) => item.id));
+    onSelectedIdsChange(selectedIds.filter((itemId) => !remove.has(itemId)));
+  };
 
   if (items.length === 0) {
     return <p className="text-sm text-gray-500 text-center py-8 border rounded-md">{emptyMessage}</p>;
@@ -92,26 +110,59 @@ function SearchableMenuItemMultiSelect({
           aria-controls={id}
         />
       </div>
-      <select
-        id={id}
-        multiple
-        size={Math.min(maxSize, Math.max(minSize, filteredItems.length || minSize))}
-        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        value={selectedIds.map(String)}
-        onChange={(e) => {
-          const selected = Array.from(e.target.selectedOptions, (o) => o.value);
-          onSelectedIdsChange(selected);
-        }}
-      >
-        {filteredItems.map((item) => (
-          <option key={item.id} value={String(item.id)}>
-            {item.name} — ${item.basePrice.toFixed(2)}
-          </option>
-        ))}
-      </select>
-      {searchValue.trim() && filteredItems.length === 0 ? (
-        <p className="text-muted-foreground mt-1 text-xs">No menu items match your search.</p>
+      <p className="text-muted-foreground mb-2 text-xs">
+        Click checkboxes to select multiple items. Selections stay saved while you search.
+      </p>
+      {filteredItems.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" className="h-8" onClick={selectAllShown}>
+            Select all shown
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="h-8" onClick={clearAllShown}>
+            Clear shown
+          </Button>
+        </div>
       ) : null}
+      <div
+        id={id}
+        role="listbox"
+        aria-multiselectable="true"
+        className={cn(
+          'overflow-y-auto rounded-md border border-input bg-background shadow-sm',
+          maxListHeightClass
+        )}
+      >
+        {filteredItems.length === 0 ? (
+          <p className="text-muted-foreground px-3 py-6 text-center text-sm">
+            {searchValue.trim() ? 'No menu items match your search.' : 'No items to show.'}
+          </p>
+        ) : (
+          filteredItems.map((item) => {
+            const checked = selectedIds.includes(item.id);
+            return (
+              <label
+                key={item.id}
+                htmlFor={`${id}-${item.id}`}
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 border-b border-input/60 px-3 py-2.5 last:border-b-0 hover:bg-muted/40',
+                  checked && 'bg-muted/30'
+                )}
+              >
+                <Checkbox
+                  id={`${id}-${item.id}`}
+                  checked={checked}
+                  onCheckedChange={(value) => toggleItem(item.id, value === true)}
+                  className="mt-0.5"
+                />
+                <span className="min-w-0 flex-1 text-sm leading-snug">
+                  <span className="font-medium">{item.name}</span>
+                  <span className="text-muted-foreground"> — ${item.basePrice.toFixed(2)}</span>
+                </span>
+              </label>
+            );
+          })
+        )}
+      </div>
     </>
   );
 }
@@ -160,15 +211,23 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
     active: true,
   });
 
-  const mapApiToMenuItem = (item: any): MenuItem => ({
-    id: String(item.id),
-    name: item.name,
-    description: item.description || '',
-    basePrice: Number(item.base_price),
-    categoryId: String(item.category_id),
-    image: item.image || '',
-    available: Boolean(item.available),
-  });
+  const mapApiToMenuItem = (item: any): MenuItem => {
+    const categoriesRaw = (item.categories ?? []) as Array<{ id: number | string }>;
+    let categoryIds = categoriesRaw.map((c) => String(c.id)).filter(Boolean);
+    if (categoryIds.length === 0 && item.category_id != null && item.category_id !== '') {
+      categoryIds = [String(item.category_id)];
+    }
+    return {
+      id: String(item.id),
+      name: item.name,
+      description: item.description || '',
+      basePrice: Number(item.base_price),
+      categoryIds,
+      categoryId: categoryIds[0] ?? '',
+      image: item.image || '',
+      available: Boolean(item.available),
+    };
+  };
 
   const fetchMenuItemsForAdd = async () => {
     try {
@@ -660,8 +719,8 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                     </Label>
                     <p className="text-xs text-muted-foreground mb-2">
                       {formData.offerKind === 'standard'
-                        ? 'Items not already assigned to another offer.'
-                        : 'Must add two of the same configured item to trigger BOGO.'}
+                        ? 'Select every item this discount applies to (one offer, many items).'
+                        : 'Select every item for buy-one-get-one-same (one offer, many items).'}
                     </p>
                     <SearchableMenuItemMultiSelect
                       id="applicable-menu-items"
@@ -679,8 +738,6 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                           ? 'Loading items… or no items on this offer and none free to add.'
                           : 'No menu items without an offer. Remove items from other offers first.'
                       }
-                      minSize={6}
-                      maxSize={12}
                     />
                     <p className="text-xs text-gray-500 mt-2">
                       Selected: {formData.applicableItemIds.length} item(s)
@@ -711,8 +768,6 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                         emptyMessage={
                           editingOffer ? 'Loading items…' : 'No menu items without an offer.'
                         }
-                        minSize={5}
-                        maxSize={10}
                         searchPlaceholder="Search paid (buy) items…"
                       />
                       <p className="text-xs text-gray-500 mt-2">Selected: {formData.applicableItemIds.length}</p>
@@ -739,8 +794,6 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
                         emptyMessage={
                           editingOffer ? 'Loading items…' : 'No menu items without an offer.'
                         }
-                        minSize={5}
-                        maxSize={10}
                         searchPlaceholder="Search free items…"
                       />
                       <p className="text-xs text-gray-500 mt-2">Selected: {formData.bogoFreeItemIds.length}</p>

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
+import { formatSelectedOptionNames } from '../lib/formatSelectedOptions';
 import { CartItem, Order } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -74,9 +75,13 @@ function DashboardOrderLineItem({ item }: { item: CartItem }) {
           {item.selectedOptions.map((group) => (
             <li key={group.optionGroupId}>
               <span className="font-medium text-muted-foreground">{group.optionGroupName}:</span>{' '}
-              {group.options
-                .map((o) => (o.price > 0 ? `${o.name} (+${fmt(o.price)})` : o.name))
-                .join(', ')}
+              {formatSelectedOptionNames(group.options)}
+              {group.options.some((o) => o.price > 0) ? (
+                <span className="text-orange-600">
+                  {' '}
+                  (+{fmt(group.options.reduce((sum, o) => sum + o.price, 0))})
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>

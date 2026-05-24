@@ -19,6 +19,8 @@ import { OptionsManager, LocationsManager, OrdersManager } from '../components/A
 import {
   AdminFormSheet,
   ADMIN_SHEET_SELECT_CONTENT_CLASS,
+  CategoriesMultiSelect,
+  formatMenuItemCategoryNames,
   getLinkedOptionGroupIdsForMenuItem,
   getOptionGroupMenuItemIds,
   LinkedOptionGroupsSortableList,
@@ -1257,7 +1259,7 @@ function MenuItemsManager({
     name: '',
     description: '',
     basePrice: '',
-    categoryId: '',
+    categoryIds: [] as string[],
     image: '',
     available: true,
   });
@@ -1267,7 +1269,7 @@ function MenuItemsManager({
       name: '',
       description: '',
       basePrice: '',
-      categoryId: '',
+      categoryIds: [],
       image: '',
       available: true,
     });
@@ -1307,7 +1309,12 @@ function MenuItemsManager({
       name: item.name,
       description: item.description,
       basePrice: item.basePrice.toString(),
-      categoryId: item.categoryId,
+      categoryIds:
+        item.categoryIds?.length > 0
+          ? [...item.categoryIds]
+          : item.categoryId
+            ? [item.categoryId]
+            : [],
       image: item.image,
       available: item.available,
     });
@@ -1364,11 +1371,16 @@ function MenuItemsManager({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (formData.categoryIds.length === 0) {
+      toast.error('Select at least one category');
+      return;
+    }
+
     const itemData = {
       name: formData.name,
       description: formData.description,
       basePrice: parseFloat(formData.basePrice),
-      categoryId: formData.categoryId,
+      categoryIds: formData.categoryIds,
       image: formData.image,
       available: formData.available,
     };
@@ -1414,16 +1426,11 @@ function MenuItemsManager({
     setIsOpen(true);
   };
 
-  const categoryNameById = useMemo(
-    () => new Map(categories.map((c: Category) => [c.id, c.name])),
-    [categories]
-  );
-
   const menuItemsTableRows = useMemo(() => {
     const q = menuItemTableSearch.trim().toLowerCase();
     if (!q) return menuItems;
     return menuItems.filter((item: MenuItem) => {
-      const categoryName = categoryNameById.get(item.categoryId) ?? '';
+      const categoryName = formatMenuItemCategoryNames(item, categories);
       const hay = [
         item.name,
         item.description,
@@ -1437,7 +1444,7 @@ function MenuItemsManager({
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [menuItems, categoryNameById, menuItemTableSearch]);
+  }, [menuItems, categories, menuItemTableSearch]);
 
   return (
     <Card>
@@ -1477,21 +1484,13 @@ function MenuItemsManager({
                     />
                   </div>
                   <div>
-                    <Label htmlFor="category">Category *</Label>
-                    <Select
-                      modal={false}
-                      value={formData.categoryId}
-                      onValueChange={(value) => setFormData((prev) => ({ ...prev, categoryId: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent className={ADMIN_SHEET_SELECT_CONTENT_CLASS}>
-                        {categories.map((cat: Category) => (
-                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <CategoriesMultiSelect
+                      categories={categories}
+                      value={formData.categoryIds}
+                      onChange={(categoryIds) => setFormData((prev) => ({ ...prev, categoryIds }))}
+                      label="Categories *"
+                      description="Item appears under each selected category on the menu."
+                    />
                   </div>
                 </div>
                 <div>
@@ -1619,7 +1618,7 @@ function MenuItemsManager({
               menuItemsTableRows.map((item: MenuItem) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell>{categoryNameById.get(item.categoryId) ?? '—'}</TableCell>
+                  <TableCell>{formatMenuItemCategoryNames(item, categories) || '—'}</TableCell>
                   <TableCell>${item.basePrice.toFixed(2)}</TableCell>
                   <TableCell>
                     <Badge variant={item.available ? 'default' : 'secondary'}>

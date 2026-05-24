@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
 import { Check, ChevronsUpDown, Pencil, Plus, Printer, Receipt, Search, Trash2 } from 'lucide-react';
+import { formatOptionGroupNamesForOption } from '../lib/optionGroupIds';
 import { MenuItem, OptionGroup, Option, Location, Order, CartItem, StoreStatusMode } from '../types';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import {
@@ -30,6 +31,7 @@ import {
   formatOptionGroupMenuItemNames,
   MenuItemsMultiSelect,
   OptionGroupPicker,
+  OptionGroupsMultiSelect,
 } from './AdminFormSheet';
 
 /** Matches checkout: `CheckoutPage` uses 13% HST on (subtotal − discounts + delivery). */
@@ -388,6 +390,7 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
     required: false,
     minSelections: '',
     maxSelections: '',
+    allowRepeatSelections: false,
   });
 
   const optionGroupsSorted = useMemo(
@@ -420,6 +423,7 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
       required: false,
       minSelections: '',
       maxSelections: '',
+      allowRepeatSelections: false,
     });
     setEditingGroup(null);
     setSetupMode('new');
@@ -445,6 +449,7 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
       required: group.required,
       minSelections: group.minSelections?.toString() || '',
       maxSelections: group.maxSelections?.toString() || '',
+      allowRepeatSelections: Boolean(group.allowRepeatSelections),
     });
   };
 
@@ -483,6 +488,9 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
     }
     if (formData.maxSelections) {
       payload.maxSelections = Number.parseInt(formData.maxSelections, 10);
+    }
+    if (formData.type === 'multiple') {
+      payload.allowRepeatSelections = formData.allowRepeatSelections;
     }
     return payload;
   };
@@ -558,7 +566,11 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
               modal={false}
               value={formData.type}
               onValueChange={(value: 'single' | 'multiple') =>
-                setFormData((prev) => ({ ...prev, type: value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  type: value,
+                  ...(value === 'single' ? { allowRepeatSelections: false } : {}),
+                }))
               }
             >
               <SelectTrigger id="group-type">
@@ -597,6 +609,25 @@ function OptionGroupsManager({ menuItems, optionGroups, addOptionGroup, updateOp
                   value={formData.maxSelections}
                   onChange={(e) => setFormData({ ...formData, maxSelections: e.target.value })}
                 />
+              </div>
+            </div>
+          ) : null}
+          {formData.type === 'multiple' ? (
+            <div className="flex items-start space-x-2 rounded-md border p-3">
+              <Switch
+                id="allow-repeat-selections"
+                checked={formData.allowRepeatSelections}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, allowRepeatSelections: checked })
+                }
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="allow-repeat-selections" className="cursor-pointer">
+                  Customer can choose multiple selection of same option
+                </Label>
+                <p className="text-muted-foreground text-xs">
+                  Max applies to total picks (e.g. same option 3× or three different options).
+                </p>
               </div>
             </div>
           ) : null}
@@ -734,7 +765,7 @@ function OptionsListManager({
   const [editingOption, setEditingOption] = useState<Option | null>(null);
   const [formData, setFormData] = useState({
     name: '',
-    optionGroupId: '',
+    optionGroupIds: [] as string[],
     price: '',
     active: true,
   });
@@ -743,14 +774,12 @@ function OptionsListManager({
     const q = optionsTableSearch.trim().toLowerCase();
     if (!q) return options;
     return options.filter((opt: Option) => {
-      const group = optionGroups.find((g: OptionGroup) => g.id === opt.optionGroupId);
-      const itemNames = group ? formatOptionGroupMenuItemNames(group, menuItems) : '';
+      const groupNames = formatOptionGroupNamesForOption(opt, optionGroups);
       const hay = [
         opt.name,
         opt.price.toFixed(2),
         String(opt.price),
-        group?.name ?? '',
-        itemNames,
+        groupNames,
         opt.active === false ? 'inactive' : 'active',
         opt.id,
       ]
@@ -761,7 +790,7 @@ function OptionsListManager({
   }, [options, optionGroups, menuItems, optionsTableSearch]);
 
   const resetForm = () => {
-    setFormData({ name: '', optionGroupId: '', price: '', active: true });
+    setFormData({ name: '', optionGroupIds: [], price: '', active: true });
     setEditingOption(null);
   };
 
@@ -774,7 +803,12 @@ function OptionsListManager({
     setEditingOption(option);
     setFormData({
       name: option.name,
-      optionGroupId: option.optionGroupId,
+      optionGroupIds:
+        option.optionGroupIds?.length > 0
+          ? [...option.optionGroupIds]
+          : option.optionGroupId
+            ? [option.optionGroupId]
+            : [],
       price: option.price.toString(),
       active: option.active !== false,
     });
@@ -783,10 +817,15 @@ function OptionsListManager({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    if (formData.optionGroupIds.length === 0) {
+      toast.error('Select at least one option group');
+      return;
+    }
+
     const optionData = {
       name: formData.name,
-      optionGroupId: formData.optionGroupId,
+      optionGroupIds: formData.optionGroupIds,
       price: parseFloat(formData.price) || 0,
       active: formData.active,
     };
@@ -835,7 +874,7 @@ function OptionsListManager({
               type="submit"
               form="option-form"
               className="w-full sm:w-auto"
-              disabled={!formData.optionGroupId.trim()}
+              disabled={formData.optionGroupIds.length === 0}
             >
               {editingOption ? 'Update' : 'Add'} Option
             </Button>
@@ -852,12 +891,13 @@ function OptionsListManager({
                 required
               />
             </div>
-            <OptionGroupPicker
+            <OptionGroupsMultiSelect
               optionGroups={optionGroups}
               menuItems={menuItems}
-              value={formData.optionGroupId}
-              onChange={(id) => setFormData((prev) => ({ ...prev, optionGroupId: id }))}
-              label="Option group *"
+              value={formData.optionGroupIds}
+              onChange={(optionGroupIds) => setFormData((prev) => ({ ...prev, optionGroupIds }))}
+              label="Option groups *"
+              description="This choice can appear in every selected group on the customize page."
             />
             <div>
               <Label htmlFor="option-price">Additional Price</Label>
@@ -912,11 +952,11 @@ function OptionsListManager({
               </TableRow>
             ) : (
               optionsTableRows.map((option: Option) => {
-              const group = optionGroups.find((g: OptionGroup) => g.id === option.optionGroupId);
+              const groupLabel = formatOptionGroupNamesForOption(option, optionGroups);
               return (
                 <TableRow key={option.id}>
                   <TableCell className="font-medium">{option.name}</TableCell>
-                  <TableCell>{group?.name}</TableCell>
+                  <TableCell>{groupLabel || '—'}</TableCell>
                   <TableCell>${option.price.toFixed(2)}</TableCell>
                   <TableCell>
                     <Badge variant={option.active === false ? 'secondary' : 'default'}>

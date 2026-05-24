@@ -217,15 +217,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     order: raw.display_order ?? 0,
   });
 
-  const toMenuItem = (raw: any): MenuItem => ({
-    id: String(raw.id),
-    name: raw.name,
-    description: raw.description || '',
-    basePrice: Number(raw.base_price),
-    categoryId: String(raw.category_id),
-    image: raw.image || '',
-    available: Boolean(raw.available),
-  });
+  const toMenuItem = (raw: any): MenuItem => {
+    const categoriesRaw = (raw.categories ?? []) as Array<{ id: number | string }>;
+    let categoryIds = categoriesRaw.map((c) => String(c.id)).filter(Boolean);
+    if (categoryIds.length === 0 && raw.category_id != null && raw.category_id !== '') {
+      categoryIds = [String(raw.category_id)];
+    }
+    return {
+      id: String(raw.id),
+      name: raw.name,
+      description: raw.description || '',
+      basePrice: Number(raw.base_price),
+      categoryIds,
+      categoryId: categoryIds[0] ?? '',
+      image: raw.image || '',
+      available: Boolean(raw.available),
+    };
+  };
 
   const toOptionGroup = (raw: any): OptionGroup => {
     const menuItemsRaw = (raw.menu_items ?? raw.menuItems) || [];
@@ -252,18 +260,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       required: Boolean(raw.required),
       minSelections: raw.min_selections ?? undefined,
       maxSelections: raw.max_selections ?? undefined,
+      allowRepeatSelections: Boolean(raw.allow_repeat_selections ?? false),
       order: raw.display_order ?? 0,
       pivotOrderByMenuItem,
     };
   };
 
-  const toOption = (raw: any): Option => ({
-    id: String(raw.id),
-    optionGroupId: String(raw.option_group_id),
-    name: raw.name,
-    price: Number(raw.price ?? 0),
-    active: raw.active !== undefined ? Boolean(raw.active) : true,
-  });
+  const toOption = (raw: any): Option => {
+    const groupsRaw = (raw.option_groups ?? raw.optionGroups) || [];
+    let optionGroupIds = groupsRaw
+      .map((g: { id: number | string }) => String(g.id))
+      .filter(Boolean);
+    if (optionGroupIds.length === 0 && raw.option_group_id != null && raw.option_group_id !== '') {
+      optionGroupIds = [String(raw.option_group_id)];
+    }
+    return {
+      id: String(raw.id),
+      optionGroupIds,
+      optionGroupId: optionGroupIds[0] ?? '',
+      name: raw.name,
+      price: Number(raw.price ?? 0),
+      active: raw.active !== undefined ? Boolean(raw.active) : true,
+    };
+  };
 
   const toLocation = (raw: any): Location => ({
     id: String(raw.id),
@@ -353,12 +372,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const rawMenuItem = row.menu_item ?? row.menuItem;
       const menuItemId = String(row.menu_item_id ?? rawMenuItem?.id ?? '');
       const fromCache = menuItems.find((m) => m.id === menuItemId);
+      const categoriesRaw = (rawMenuItem?.categories ?? []) as Array<{ id: number | string }>;
+      let categoryIds = categoriesRaw.map((c) => String(c.id)).filter(Boolean);
+      if (categoryIds.length === 0) {
+        const legacy = rawMenuItem?.category_id ?? rawMenuItem?.categoryId;
+        if (legacy != null && legacy !== '') categoryIds = [String(legacy)];
+      }
       const mappedMenuItem: MenuItem = fromCache || {
         id: menuItemId,
         name: rawMenuItem?.name ?? `Item #${menuItemId}`,
         description: rawMenuItem?.description ?? '',
         basePrice: Number(rawMenuItem?.base_price ?? rawMenuItem?.basePrice ?? row.unit_price ?? 0),
-        categoryId: String(rawMenuItem?.category_id ?? rawMenuItem?.categoryId ?? ''),
+        categoryIds,
+        categoryId: categoryIds[0] ?? '',
         image: rawMenuItem?.image ?? '',
         available: Boolean(rawMenuItem?.available ?? true),
       };
@@ -961,6 +987,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     void request('/auth/logout', { method: 'POST' }).catch(() => undefined);
   };
 
+  const resolveCategoryIdsForApi = (item: Partial<MenuItem>): number[] => {
+    const ids =
+      item.categoryIds && item.categoryIds.length > 0
+        ? item.categoryIds
+        : item.categoryId
+          ? [item.categoryId]
+          : [];
+    return ids.map((id) => Number(id)).filter((n) => !Number.isNaN(n) && n > 0);
+  };
+
   const addMenuItem = async (item: Omit<MenuItem, 'id'>) => {
     const raw = (await request('/menu-items', {
       method: 'POST',
@@ -968,7 +1004,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         name: item.name,
         description: item.description,
         base_price: item.basePrice,
-        category_id: Number(item.categoryId),
+        category_ids: resolveCategoryIdsForApi(item),
         image: item.image,
         available: item.available,
       }),
@@ -978,13 +1014,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateMenuItem = async (id: string, item: Partial<MenuItem>) => {
+    const categoryIds = resolveCategoryIdsForApi(item);
     await request(`/menu-items/${id}`, {
       method: 'PUT',
       body: JSON.stringify({
         name: item.name,
         description: item.description,
         base_price: item.basePrice,
-        category_id: item.categoryId ? Number(item.categoryId) : undefined,
+        ...(categoryIds.length > 0 ? { category_ids: categoryIds } : {}),
         image: item.image,
         available: item.available,
       }),
@@ -1039,6 +1076,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         required: group.required ?? false,
         min_selections: group.minSelections ?? null,
         max_selections: group.maxSelections ?? null,
+        allow_repeat_selections: group.allowRepeatSelections ?? false,
         display_order: group.order ?? 0,
       }),
     })) as { id: number | string };
@@ -1068,6 +1106,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (group.required !== undefined) body.required = group.required;
     if (group.minSelections !== undefined) body.min_selections = group.minSelections;
     if (group.maxSelections !== undefined) body.max_selections = group.maxSelections;
+    if (group.allowRepeatSelections !== undefined) {
+      body.allow_repeat_selections = group.allowRepeatSelections;
+    }
     if (group.order !== undefined) body.display_order = group.order;
 
     await request(`/option-groups/${id}`, {
@@ -1082,11 +1123,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await reloadCustomization();
   };
 
+  const resolveOptionGroupIdsForApi = (option: Partial<Option>): number[] => {
+    const ids =
+      option.optionGroupIds && option.optionGroupIds.length > 0
+        ? option.optionGroupIds
+        : option.optionGroupId
+          ? [option.optionGroupId]
+          : [];
+    return ids.map((id) => Number(id)).filter((n) => !Number.isNaN(n) && n > 0);
+  };
+
   const addOption = (option: Omit<Option, 'id'>) => {
     void request('/options', {
       method: 'POST',
       body: JSON.stringify({
-        option_group_id: Number(option.optionGroupId),
+        option_group_ids: resolveOptionGroupIdsForApi(option),
         name: option.name,
         price: option.price,
         active: option.active !== false,
@@ -1095,8 +1146,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateOption = (id: string, option: Partial<Option>) => {
+    const groupIds = resolveOptionGroupIdsForApi(option);
     const body: Record<string, unknown> = {};
-    if (option.optionGroupId !== undefined) body.option_group_id = Number(option.optionGroupId);
+    if (groupIds.length > 0) body.option_group_ids = groupIds;
     if (option.name !== undefined) body.name = option.name;
     if (option.price !== undefined) body.price = option.price;
     if (option.active !== undefined) body.active = option.active;

@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useApp } from '../context/AppContext';
-import { Offer } from '../types';
-import { spendGetFreeMenuBadge } from '../lib/spendOfferDisplay';
+import { getMenuItemOfferDisplay } from '../lib/bogoOfferMenuBadge';
 import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
@@ -73,18 +72,47 @@ export function MenuPage() {
   const sortMenuItemsAsc = (items: typeof menuItems) =>
     [...items].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
 
+  const itemCategoryIds = (item: (typeof menuItems)[number]) =>
+    item.categoryIds?.length > 0
+      ? item.categoryIds
+      : item.categoryId
+        ? [item.categoryId]
+        : [];
+
+  const primaryCategoryId = (
+    item: (typeof menuItems)[number],
+    categoryOrder: Map<string, number>
+  ) => {
+    const ids = itemCategoryIds(item);
+    if (ids.length === 0) return item.categoryId;
+    let best = ids[0];
+    let bestOrder = categoryOrder.get(best) ?? Number.MAX_SAFE_INTEGER;
+    for (const id of ids.slice(1)) {
+      const order = categoryOrder.get(id) ?? Number.MAX_SAFE_INTEGER;
+      if (order < bestOrder) {
+        bestOrder = order;
+        best = id;
+      }
+    }
+    return best;
+  };
+
   /** “All”: categories by display order; items within each category ascending (oldest id first). */
   const filteredItems = useMemo(() => {
     if (selectedCategoryId !== 'all') {
       return sortMenuItemsAsc(
-        menuItems.filter((item) => item.categoryId === selectedCategoryId)
+        menuItems.filter((item) => itemCategoryIds(item).includes(selectedCategoryId))
       );
     }
     const categoryOrder = new Map(sortedCategories.map((c, i) => [c.id, i]));
     const decorated = menuItems.map((item) => ({ item }));
     decorated.sort((a, b) => {
-      const oa = categoryOrder.has(a.item.categoryId) ? categoryOrder.get(a.item.categoryId)! : Number.MAX_SAFE_INTEGER;
-      const ob = categoryOrder.has(b.item.categoryId) ? categoryOrder.get(b.item.categoryId)! : Number.MAX_SAFE_INTEGER;
+      const oa = categoryOrder.has(primaryCategoryId(a.item, categoryOrder))
+        ? categoryOrder.get(primaryCategoryId(a.item, categoryOrder))!
+        : Number.MAX_SAFE_INTEGER;
+      const ob = categoryOrder.has(primaryCategoryId(b.item, categoryOrder))
+        ? categoryOrder.get(primaryCategoryId(b.item, categoryOrder))!
+        : Number.MAX_SAFE_INTEGER;
       if (oa !== ob) return oa - ob;
       return (Number(a.item.id) || 0) - (Number(b.item.id) || 0);
     });
@@ -92,29 +120,6 @@ export function MenuPage() {
   }, [selectedCategoryId, menuItems, sortedCategories]);
 
   const activeOffers = getActiveOffers();
-
-  const getOfferForItem = (itemId: string) => {
-    return activeOffers.find((offer) => {
-      const kind = offer.offerKind ?? 'standard';
-      if (kind === 'spend_get_free') {
-        const t = offer.spendRewardType ?? 'free_item';
-        if (t === 'free_item') return offer.rewardMenuItemId === itemId;
-        // Order-level spend rewards (% / fixed) should only be surfaced at cart level,
-        // not as per-item badges in the menu list.
-        return false;
-      }
-      return offer.applicableItemIds.includes(itemId);
-    });
-  };
-
-  const offerBadgeText = (offer: Offer) => {
-    const kind = offer.offerKind ?? 'standard';
-    if (kind === 'bogo_same' || kind === 'bogo_any') return 'BOGO';
-    if (kind === 'spend_get_free') return spendGetFreeMenuBadge(offer);
-    return offer.discountType === 'percentage'
-      ? `${offer.discountValue}% off`
-      : `$${offer.discountValue} off`;
-  };
 
   const getImageForItem = (itemName: string) => {
     if (itemName.toLowerCase().includes('pizza')) {
@@ -182,7 +187,7 @@ export function MenuPage() {
             className="scroll-mt-28 md:scroll-mt-24 grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5"
           >
             {filteredItems.map((item) => {
-              const itemOffer = getOfferForItem(item.id);
+              const itemOfferDisplay = getMenuItemOfferDisplay(item.id, activeOffers, menuItems);
               const imageSrc = item.image?.trim() ? item.image : getImageForItem(item.name);
               return (
                 <div
@@ -228,9 +233,9 @@ export function MenuPage() {
                       ) : (
                         <UtensilsCrossed className="h-10 w-10 text-gray-300" aria-hidden />
                       )}
-                      {itemOffer && (
+                      {itemOfferDisplay && (
                         <span className="pointer-events-none absolute right-1.5 top-1.5 z-10 max-w-[calc(100%-0.75rem)] truncate rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase leading-tight tracking-wide text-white shadow-md sm:right-2 sm:top-2">
-                          {offerBadgeText(itemOffer)}
+                          {itemOfferDisplay.badgeText}
                         </span>
                       )}
                       {!item.available && (
@@ -249,9 +254,12 @@ export function MenuPage() {
                       <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-gray-500">
                         {item.description || ' '}
                       </p>
-                      {itemOffer && (
+                      {itemOfferDisplay && (
                         <p className="mt-1.5 text-xs font-medium text-emerald-700 line-clamp-1">
-                          {itemOffer.title}
+                          {(itemOfferDisplay.offer.offerKind === 'bogo_same' ||
+                            itemOfferDisplay.offer.offerKind === 'bogo_any')
+                            ? itemOfferDisplay.badgeText
+                            : itemOfferDisplay.offer.title}
                         </p>
                       )}
                     </div>

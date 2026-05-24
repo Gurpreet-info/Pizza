@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Check, ChevronsUpDown, GripVertical, X } from 'lucide-react';
-import { MenuItem, Option, OptionGroup } from '../types';
+import { bucketOptionsByGroupId } from '../lib/optionGroupIds';
+import { Category, MenuItem, Option, OptionGroup } from '../types';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -107,6 +108,119 @@ export function formatOptionGroupMenuItemNames(group: OptionGroup, menuItems: Me
     .join(', ');
 }
 
+export function formatMenuItemCategoryNames(item: MenuItem, categories: Category[]) {
+  const ids =
+    item.categoryIds?.length > 0
+      ? item.categoryIds
+      : item.categoryId
+        ? [item.categoryId]
+        : [];
+  return ids
+    .map((id) => categories.find((c) => c.id === id)?.name)
+    .filter(Boolean)
+    .join(', ');
+}
+
+export function CategoriesMultiSelect({
+  categories,
+  value,
+  onChange,
+  label,
+  description,
+}: {
+  categories: Category[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+  label: string;
+  description?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const sorted = useMemo(
+    () => [...categories].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)),
+    [categories]
+  );
+
+  const toggle = (categoryId: string) => {
+    onChange(
+      value.includes(categoryId)
+        ? value.filter((id) => id !== categoryId)
+        : [...value, categoryId]
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {description ? <p className="text-muted-foreground text-xs">{description}</p> : null}
+      {value.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map((categoryId) => {
+            const name = categories.find((c) => c.id === categoryId)?.name;
+            if (!name) return null;
+            return (
+              <Badge key={categoryId} variant="secondary" className="font-normal">
+                {name}
+              </Badge>
+            );
+          })}
+        </div>
+      ) : null}
+      <Popover modal={false} open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between font-normal"
+          >
+            <span className="truncate text-left">
+              {value.length > 0 ? `${value.length} categor${value.length === 1 ? 'y' : 'ies'} selected` : 'Select categories'}
+            </span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent {...COMBO_PROPS} className={COMBO_POPOVER}>
+          <Command
+            className={COMBO_COMMAND}
+            filter={(val, search) => {
+              const q = search.trim().toLowerCase();
+              if (!q) return 1;
+              return val.toLowerCase().includes(q) ? 1 : 0;
+            }}
+          >
+            <CommandInput
+              placeholder="Search categories…"
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+            <CommandList className={COMBO_LIST}>
+              <CommandEmpty>No category found.</CommandEmpty>
+              <CommandGroup>
+                {sorted.map((cat) => (
+                  <CommandItem
+                    key={cat.id}
+                    value={`${cat.id} ${cat.name}`}
+                    onSelect={() => toggle(cat.id)}
+                  >
+                    <Check
+                      className={cn(
+                        'h-4 w-4 shrink-0',
+                        value.includes(cat.id) ? 'opacity-100' : 'opacity-0'
+                      )}
+                      aria-hidden
+                    />
+                    <span className="truncate">{cat.name}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 export function MenuItemsMultiSelect({
   menuItems,
   value,
@@ -210,6 +324,7 @@ export type OptionGroupRulesForm = {
   required: boolean;
   minSelections: string;
   maxSelections: string;
+  allowRepeatSelections: boolean;
 };
 
 export function optionGroupToRulesForm(group: OptionGroup): OptionGroupRulesForm {
@@ -218,6 +333,7 @@ export function optionGroupToRulesForm(group: OptionGroup): OptionGroupRulesForm
     required: group.required,
     minSelections: group.minSelections != null ? String(group.minSelections) : '',
     maxSelections: group.maxSelections != null ? String(group.maxSelections) : '',
+    allowRepeatSelections: Boolean(group.allowRepeatSelections),
   };
 }
 
@@ -233,9 +349,11 @@ export function rulesFormToPartialOptionGroup(rules: OptionGroupRulesForm): Part
     patch.maxSelections = rules.maxSelections.trim()
       ? Number.parseInt(rules.maxSelections, 10)
       : undefined;
+    patch.allowRepeatSelections = rules.allowRepeatSelections;
   } else {
     patch.minSelections = undefined;
     patch.maxSelections = undefined;
+    patch.allowRepeatSelections = false;
   }
   return patch;
 }
@@ -256,7 +374,12 @@ export function OptionGroupRulesFields({
         <Select
           modal={false}
           value={value.type}
-          onValueChange={(v: 'single' | 'multiple') => onChange({ type: v })}
+          onValueChange={(v: 'single' | 'multiple') =>
+            onChange({
+              type: v,
+              ...(v === 'single' ? { allowRepeatSelections: false } : {}),
+            })
+          }
         >
           <SelectTrigger id={`${idPrefix}-type`}>
             <SelectValue placeholder="Select type" />
@@ -303,6 +426,23 @@ export function OptionGroupRulesFields({
           </div>
         </div>
       ) : null}
+      {value.type === 'multiple' ? (
+        <div className="flex items-start space-x-2 rounded-md border border-border/60 p-3">
+          <Switch
+            id={`${idPrefix}-allow-repeat`}
+            checked={value.allowRepeatSelections}
+            onCheckedChange={(checked) => onChange({ allowRepeatSelections: checked })}
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor={`${idPrefix}-allow-repeat`} className="cursor-pointer">
+              Customer can choose multiple selection of same option
+            </Label>
+            <p className="text-muted-foreground text-xs">
+              When max is 3, they can pick the same topping three times or three different toppings.
+            </p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -320,6 +460,7 @@ export function createEmptyOptionGroupDraft(): NewOptionGroupDraft {
     required: false,
     minSelections: '',
     maxSelections: '',
+    allowRepeatSelections: false,
   };
 }
 
@@ -384,18 +525,7 @@ export function LinkedOptionGroupsSortableList({
 }) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
-  const optionsByGroupId = useMemo(() => {
-    const map = new Map<string, Option[]>();
-    for (const opt of options) {
-      const list = map.get(opt.optionGroupId) ?? [];
-      list.push(opt);
-      map.set(opt.optionGroupId, list);
-    }
-    for (const list of map.values()) {
-      list.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
-    }
-    return map;
-  }, [options]);
+  const optionsByGroupId = useMemo(() => bucketOptionsByGroupId(options), [options]);
 
   const moveDraggedTo = (targetId: string) => {
     if (!draggedId || draggedId === targetId) return;
@@ -524,6 +654,7 @@ export function LinkedOptionGroupsSortableList({
 
 export function OptionGroupsMultiSelect({
   optionGroups,
+  menuItems,
   value,
   onChange,
   label,
@@ -531,6 +662,7 @@ export function OptionGroupsMultiSelect({
   showSelectedBadges = true,
 }: {
   optionGroups: OptionGroup[];
+  menuItems?: MenuItem[];
   value: string[];
   onChange: (ids: string[]) => void;
   label: string;
@@ -597,22 +729,29 @@ export function OptionGroupsMultiSelect({
             <CommandList className={COMBO_LIST}>
               <CommandEmpty>No option group found.</CommandEmpty>
               <CommandGroup>
-                {sorted.map((group) => (
-                  <CommandItem
-                    key={group.id}
-                    value={`${group.id} ${group.name} ${group.type}`}
-                    onSelect={() => toggle(group.id)}
-                  >
-                    <Check
-                      className={cn(
-                        'h-4 w-4 shrink-0',
-                        value.includes(group.id) ? 'opacity-100' : 'opacity-0'
-                      )}
-                      aria-hidden
-                    />
-                    <span className="truncate">{group.name}</span>
-                  </CommandItem>
-                ))}
+                {sorted.map((group) => {
+                  const items =
+                    menuItems?.length ? formatOptionGroupMenuItemNames(group, menuItems) : '';
+                  return (
+                    <CommandItem
+                      key={group.id}
+                      value={`${group.id} ${group.name} ${group.type} ${items}`}
+                      onSelect={() => toggle(group.id)}
+                    >
+                      <Check
+                        className={cn(
+                          'h-4 w-4 shrink-0',
+                          value.includes(group.id) ? 'opacity-100' : 'opacity-0'
+                        )}
+                        aria-hidden
+                      />
+                      <span className="truncate">
+                        {group.name}
+                        {items ? ` · ${items}` : ''}
+                      </span>
+                    </CommandItem>
+                  );
+                })}
               </CommandGroup>
             </CommandList>
           </Command>

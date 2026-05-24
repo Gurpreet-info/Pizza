@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Link, useParams } from 'react-router';
 import { useApp } from '../context/AppContext';
+import { formatSelectedOptionNames } from '../lib/formatSelectedOptions';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
@@ -117,7 +118,7 @@ export function OrderConfirmationPage() {
                   <p className="font-semibold">{item.menuItem.name} x{item.quantity}</p>
                   {item.selectedOptions.map((group) => (
                     <p key={group.optionGroupId} className="text-sm text-gray-600">
-                      {group.optionGroupName}: {group.options.map(o => o.name).join(', ')}
+                      {group.optionGroupName}: {formatSelectedOptionNames(group.options)}
                     </p>
                   ))}
                   {item.specialInstructions && (

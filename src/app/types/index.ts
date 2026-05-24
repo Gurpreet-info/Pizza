@@ -3,6 +3,9 @@ export interface MenuItem {
   name: string;
   description: string;
   basePrice: number;
+  /** All linked categories. */
+  categoryIds: string[];
+  /** First linked category — backward compatibility for older paths. */
   categoryId: string;
   image: string;
   available: boolean;
@@ -27,6 +30,8 @@ export interface OptionGroup {
   required: boolean;
   minSelections?: number;
   maxSelections?: number;
+  /** Multiple select only: same option can be chosen more than once (counts toward max). */
+  allowRepeatSelections?: boolean;
   /** Legacy global display order on option_groups (prefer pivotOrderByMenuItem per item). */
   order: number;
   /** Per-menu-item sort order from pivot (menu_item_option_group.display_order). */
@@ -35,6 +40,9 @@ export interface OptionGroup {
 
 export interface Option {
   id: string;
+  /** All option groups this choice belongs to. */
+  optionGroupIds: string[];
+  /** First linked group — backward compatibility. */
   optionGroupId: string;
   name: string;
   price: number;

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
+import { formatSelectedOptionNames } from '../lib/formatSelectedOptions';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Separator } from '../components/ui/separator';
@@ -118,7 +119,7 @@ export function CartPage() {
                     {item.selectedOptions.map((selectedGroup) => (
                       <div key={selectedGroup.optionGroupId} className="text-sm text-gray-600 mb-1">
                         <span className="font-medium">{selectedGroup.optionGroupName}:</span>{' '}
-                        {selectedGroup.options.map(opt => opt.name).join(', ')}
+                        {formatSelectedOptionNames(selectedGroup.options)}
                         {selectedGroup.options.some(opt => opt.price > 0) && (
                           <span className="text-orange-600 ml-1">
                             (+${selectedGroup.options.reduce((sum, opt) => sum + opt.price, 0).toFixed(2)})

@@ -11,7 +11,9 @@ import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { toast } from 'sonner';
 import { CartItem, SelectedOption, Option, OptionGroup } from '../types';
 import { getOptionGroupOrderForMenuItem } from '../components/AdminFormSheet';
+import { bucketOptionsByGroupId } from '../lib/optionGroupIds';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { getMenuItemOfferDisplay } from '../lib/bogoOfferMenuBadge';
 import { Minus, Plus } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 
@@ -70,20 +72,16 @@ export function MenuItemPage() {
     });
   }, [optionGroups, id]);
 
-  /** Options per group in ascending order (API list is newest-first). */
-  const optionsByGroupId = useMemo(() => {
-    const map = new Map<string, Option[]>();
-    for (const opt of options) {
-      if (!opt.active) continue;
-      const list = map.get(opt.optionGroupId) ?? [];
-      list.push(opt);
-      map.set(opt.optionGroupId, list);
-    }
-    for (const list of map.values()) {
-      list.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
-    }
-    return map;
-  }, [options]);
+  const itemBogoOfferText = useMemo(() => {
+    if (!menuItem) return null;
+    const display = getMenuItemOfferDisplay(menuItem.id, getActiveOffers(), menuItems);
+    const kind = display?.offer.offerKind;
+    if (kind === 'bogo_same' || kind === 'bogo_any') return display?.badgeText ?? null;
+    return null;
+  }, [menuItem, menuItems, getActiveOffers]);
+
+  /** Options per group in ascending order (shared options appear under each linked group). */
+  const optionsByGroupId = useMemo(() => bucketOptionsByGroupId(options), [options]);
   const editingCartItem =
     editCartItemId && menuItem
       ? cart.find((c) => c.id === editCartItemId && c.menuItem.id === menuItem.id)
@@ -165,6 +163,64 @@ export function MenuItemPage() {
     });
   };
 
+  const getOptionQuantity = (groupId: string, optionId: string): number => {
+    const group = selectedOptions.find((so) => so.optionGroupId === groupId);
+    if (!group) return 0;
+    return group.options.filter((o) => o.id === optionId).length;
+  };
+
+  const adjustRepeatOption = (
+    groupId: string,
+    groupName: string,
+    option: Option,
+    delta: number
+  ) => {
+    if (delta === 0) return;
+    const og = itemOptionGroups.find((g) => g.id === groupId);
+    setSelectedOptions((prev) => {
+      const existingGroup = prev.find((so) => so.optionGroupId === groupId);
+      const currentCount = existingGroup?.options.length ?? 0;
+
+      if (delta > 0) {
+        if (
+          og?.maxSelections != null &&
+          og.maxSelections > 0 &&
+          currentCount >= og.maxSelections
+        ) {
+          toast.error(`You can only select up to ${og.maxSelections} option(s)`);
+          return prev;
+        }
+        if (!existingGroup) {
+          return [
+            ...prev,
+            { optionGroupId: groupId, optionGroupName: groupName, options: [option] },
+          ];
+        }
+        return prev.map((so) =>
+          so.optionGroupId === groupId
+            ? { ...so, options: [...so.options, option] }
+            : so
+        );
+      }
+
+      if (!existingGroup) return prev;
+      let removed = false;
+      const updatedOptions = existingGroup.options.filter((o) => {
+        if (!removed && o.id === option.id) {
+          removed = true;
+          return false;
+        }
+        return true;
+      });
+      if (updatedOptions.length === 0) {
+        return prev.filter((so) => so.optionGroupId !== groupId);
+      }
+      return prev.map((so) =>
+        so.optionGroupId === groupId ? { ...so, options: updatedOptions } : so
+      );
+    });
+  };
+
   const handleMultipleSelect = (groupId: string, groupName: string, option: Option, checked: boolean) => {
     setSelectedOptions(prev => {
       const existingGroup = prev.find(so => so.optionGroupId === groupId);
@@ -210,8 +266,7 @@ export function MenuItemPage() {
   };
 
   const isOptionSelected = (groupId: string, optionId: string): boolean => {
-    const group = selectedOptions.find(so => so.optionGroupId === groupId);
-    return group ? group.options.some(o => o.id === optionId) : false;
+    return getOptionQuantity(groupId, optionId) > 0;
   };
 
   const calculateTotalPrice = (): number => {
@@ -315,6 +370,9 @@ export function MenuItemPage() {
         <div>
           <h1 className="text-4xl font-bold mb-2">{menuItem.name}</h1>
           <p className="text-gray-600 mb-4">{menuItem.description}</p>
+          {itemBogoOfferText ? (
+            <p className="text-sm font-medium text-emerald-700 mb-4">{itemBogoOfferText}</p>
+          ) : null}
           <p className="text-3xl font-bold text-orange-600 mb-6">
             Starting at ${menuItem.basePrice.toFixed(2)}
           </p>
@@ -393,6 +451,56 @@ export function MenuItemPage() {
                           </div>
                         ))}
                       </RadioGroup>
+                    ) : group.allowRepeatSelections ? (
+                      <div className="space-y-2">
+                        {groupOptions.map((option) => {
+                          const qty = getOptionQuantity(group.id, option.id);
+                          const disablePlus = atMax;
+                          return (
+                            <div key={option.id} className="flex items-center justify-between py-2">
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <span className="font-medium text-gray-900">{option.name}</span>
+                                {option.price > 0 ? (
+                                  <span className="text-gray-600 text-sm shrink-0">
+                                    +${option.price.toFixed(2)}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  disabled={qty === 0}
+                                  aria-label={`Remove one ${option.name}`}
+                                  onClick={() =>
+                                    adjustRepeatOption(group.id, group.name, option, -1)
+                                  }
+                                >
+                                  <Minus className="h-4 w-4" aria-hidden />
+                                </Button>
+                                <span className="w-6 text-center text-sm font-semibold tabular-nums">
+                                  {qty}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  disabled={disablePlus}
+                                  aria-label={`Add one ${option.name}`}
+                                  onClick={() =>
+                                    adjustRepeatOption(group.id, group.name, option, 1)
+                                  }
+                                >
+                                  <Plus className="h-4 w-4" aria-hidden />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         {groupOptions.map(option => {
