@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Checkbox } from '../components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Label } from '../components/ui/label';
+import { Badge } from '../components/ui/badge';
 import { Textarea } from '../components/ui/textarea';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { toast } from 'sonner';
@@ -444,6 +445,9 @@ export function MenuItemPage() {
                               <Label htmlFor={option.id} className="cursor-pointer">
                                 {option.name}
                               </Label>
+                              {option.isPopular ? (
+                                <Badge variant="secondary" className="shrink-0 bg-green-600 text-white hover:bg-green-600">Popular</Badge>
+                              ) : null}
                             </div>
                             {option.price > 0 ? (
                               <span className="text-gray-600">+${option.price.toFixed(2)}</span>
@@ -460,6 +464,9 @@ export function MenuItemPage() {
                             <div key={option.id} className="flex items-center justify-between py-2">
                               <div className="flex min-w-0 flex-1 items-center gap-2">
                                 <span className="font-medium text-gray-900">{option.name}</span>
+                                {option.isPopular ? (
+                                  <Badge variant="secondary" className="shrink-0 bg-green-600 text-white hover:bg-green-600">Popular</Badge>
+                                ) : null}
                                 {option.price > 0 ? (
                                   <span className="text-gray-600 text-sm shrink-0">
                                     +${option.price.toFixed(2)}
@@ -526,6 +533,9 @@ export function MenuItemPage() {
                               >
                                 {option.name}
                               </Label>
+                              {option.isPopular ? (
+                                <Badge variant="secondary" className="shrink-0 bg-green-600 text-white hover:bg-green-600">Popular</Badge>
+                              ) : null}
                             </div>
                             {option.price > 0 ? (
                               <span className="text-gray-600">+${option.price.toFixed(2)}</span>

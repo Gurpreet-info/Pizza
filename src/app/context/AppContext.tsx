@@ -9,7 +9,7 @@ import {
 } from '../lib/offerValidity';
 import { reconcileBogoAnyAutoLines } from '../lib/bogoAnyCart';
 import { reconcileBogoSameAutoLines } from '../lib/bogoSameCart';
-import { CartItem, Category, Coupon, DeliveryPostalCode, Location, MenuItem, Offer, Option, OptionGroup, Order, SeoSetting, SelectedOption, User } from '../types';
+import { CartItem, Category, Coupon, DeliveryPostalCode, Location, MenuItem, Offer, Option, OptionGroup, Order, PageBanner, SeoSetting, SelectedOption, User } from '../types';
 
 export type ApiRequestMeta = { silent?: boolean };
 
@@ -71,6 +71,10 @@ interface AppContextType {
   /** All delivery postal codes including inactive (admin). */
   deliveryPostalCodesAdmin: DeliveryPostalCode[];
   seoSettings: SeoSetting[];
+  /** Page banner image URLs keyed by page (home, menu, offers, coupons). */
+  pageBanners: PageBanner[];
+  /** Returns the admin-set banner image URL for a page, or undefined to use the page default. */
+  getBannerImage: (pageKey: string) => string | undefined;
 
   // Admin functions
   addMenuItem: (item: Omit<MenuItem, 'id'>) => Promise<string>;
@@ -141,6 +145,10 @@ interface AppContextType {
   updateSeoSettings: (
     rows: Array<{ page_key: string; meta_title: string; meta_description: string }>
   ) => Promise<SeoSetting[]>;
+  ensurePageBannersLoaded: () => Promise<void>;
+  updatePageBanners: (
+    rows: Array<{ page_key: string; image_url: string }>
+  ) => Promise<PageBanner[]>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -170,7 +178,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeDeliveryPostalCodes, setActiveDeliveryPostalCodes] = useState<DeliveryPostalCode[]>([]);
   const [deliveryPostalCodesAdmin, setDeliveryPostalCodesAdmin] = useState<DeliveryPostalCode[]>([]);
   const [seoSettings, setSeoSettings] = useState<SeoSetting[]>([]);
+  const [pageBanners, setPageBanners] = useState<PageBanner[]>([]);
   const [pendingRequests, setPendingRequests] = useState(0);
+  /** Only true once a request has been pending long enough to be worth showing a blocking spinner. */
+  const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
   const [checkoutRevealPassword, setCheckoutRevealPassword] = useState<string | null>(null);
 
   const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -215,6 +226,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     description: raw.description || '',
     image: raw.image || '',
     order: raw.display_order ?? 0,
+    showOnHome: raw.show_on_home !== undefined ? Boolean(raw.show_on_home) : true,
   });
 
   const toMenuItem = (raw: any): MenuItem => {
@@ -281,6 +293,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       name: raw.name,
       price: Number(raw.price ?? 0),
       active: raw.active !== undefined ? Boolean(raw.active) : true,
+      isPopular: raw.is_popular !== undefined ? Boolean(raw.is_popular) : false,
     };
   };
 
@@ -367,6 +380,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     metaDescription: String(raw.meta_description ?? ''),
   });
 
+  const toPageBanner = (raw: any): PageBanner => ({
+    id: String(raw.id),
+    pageKey: String(raw.page_key ?? ''),
+    imageUrl: String(raw.image_url ?? ''),
+  });
+
   const toOrderItems = (rawItems: any[]): CartItem[] => {
     return (rawItems || []).map((row: any) => {
       const rawMenuItem = row.menu_item ?? row.menuItem;
@@ -402,8 +421,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         existing.options.push({
           id: String(optRow.option_id ?? optRow.option?.id ?? ''),
           optionGroupId: groupId,
+          optionGroupIds: [groupId],
           name: optRow.option?.name ?? 'Option',
           price: Number(optRow.option_price ?? 0),
+          active: true,
+          isPopular: false,
         });
         grouped.set(groupId, existing);
       });
@@ -536,7 +558,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     | 'deliveryPublic'
     | 'deliveryAdmin'
     | 'ordersAdmin'
-    | 'seoSettings';
+    | 'seoSettings'
+    | 'pageBanners';
 
   const loaded = useRef<Record<LoadedKey, boolean>>({
     categories: false,
@@ -550,6 +573,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     deliveryAdmin: false,
     ordersAdmin: false,
     seoSettings: false,
+    pageBanners: false,
   });
 
   const ensureCategories = async (force = false) => {
@@ -635,6 +659,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     loaded.current.seoSettings = true;
   };
 
+  const ensurePageBanners = async (force = false) => {
+    if (loaded.current.pageBanners && !force) return;
+    const rows = await request('/page-banners', {}, { silent: true });
+    setPageBanners((rows || []).map(toPageBanner));
+    loaded.current.pageBanners = true;
+  };
+
+  const getBannerImage = (pageKey: string): string | undefined => {
+    const found = pageBanners.find((b) => b.pageKey === pageKey);
+    const url = found?.imageUrl?.trim();
+    return url ? url : undefined;
+  };
+
   const reloadCustomization = () => Promise.all([ensureOptionGroups(true), ensureOptions(true)]);
 
   const loadUserOrders = async () => {
@@ -650,7 +687,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const ensureHomePageLoaded = async () => {
-    await Promise.all([ensureCategories(), ensureLocations(), ensureOffers()]);
+    await Promise.all([ensureCategories(), ensureLocations(), ensureOffers(), ensureMenuItems()]);
   };
 
   const ensureMenuBrowseLoaded = async () => {
@@ -738,6 +775,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return mapped;
   };
 
+  const updatePageBanners = async (
+    rows: Array<{ page_key: string; image_url: string }>
+  ): Promise<PageBanner[]> => {
+    const saved = await request('/page-banners', {
+      method: 'PUT',
+      body: JSON.stringify({ banners: rows }),
+    });
+    const mapped = (saved || []).map(toPageBanner);
+    setPageBanners(mapped);
+    loaded.current.pageBanners = true;
+    return mapped;
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -781,6 +831,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     localStorage.setItem('cart', JSON.stringify(cart));
   }, [cart]);
+
+  // Avoid flashing a full-screen spinner for quick requests: only show it
+  // if something stays pending for a short moment.
+  useEffect(() => {
+    if (pendingRequests <= 0) {
+      setShowLoadingOverlay(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowLoadingOverlay(true), 350);
+    return () => clearTimeout(timer);
+  }, [pendingRequests]);
 
   // Cart functions
   const finalizeCartWithBogo = (next: CartItem[]) => {
@@ -1041,6 +1102,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         description: category.description,
         image: category.image,
         display_order: category.order,
+        show_on_home: category.showOnHome ?? true,
       }),
     }).then(() => Promise.all([ensureCategories(true), ensureMenuItems(true)]));
   };
@@ -1053,6 +1115,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         description: category.description,
         image: category.image,
         display_order: category.order,
+        ...(category.showOnHome !== undefined ? { show_on_home: category.showOnHome } : {}),
       }),
     }).then(() => Promise.all([ensureCategories(true), ensureMenuItems(true)]));
   };
@@ -1141,6 +1204,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         name: option.name,
         price: option.price,
         active: option.active !== false,
+        is_popular: option.isPopular === true,
       }),
     }).then(reloadCustomization);
   };
@@ -1152,6 +1216,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (option.name !== undefined) body.name = option.name;
     if (option.price !== undefined) body.price = option.price;
     if (option.active !== undefined) body.active = option.active;
+    if (option.isPopular !== undefined) body.is_popular = option.isPopular;
     void request(`/options/${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -1563,10 +1628,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ensureAdminWorkspaceLoaded,
         ensureSeoSettingsLoaded: ensureSeoSettings,
         updateSeoSettings,
+        pageBanners,
+        getBannerImage,
+        ensurePageBannersLoaded: ensurePageBanners,
+        updatePageBanners,
       }}
     >
       {children}
-      {pendingRequests > 0 ? (
+      {showLoadingOverlay ? (
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30"
           role="status"

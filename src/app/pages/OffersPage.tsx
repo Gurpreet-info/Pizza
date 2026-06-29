@@ -67,6 +67,8 @@ export function OffersPage() {
       <HomePageBanner
         title="Today’s Special Offers"
         subtitle="Discover fresh discounts, BOGO deals, and spend rewards available right now."
+        pageKey="offers"
+        backgroundImage="https://images.unsplash.com/photo-1607013251379-e6eecfffe234?auto=format&fit=crop&w=2000&q=80"
       />
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">

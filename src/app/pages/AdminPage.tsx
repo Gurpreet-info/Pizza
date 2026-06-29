@@ -13,6 +13,7 @@ import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '../components/ui/dialog';
 import { toast } from 'sonner';
+import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { Pencil, Trash2, Plus, Bell, Search } from 'lucide-react';
 import { MenuItem, Category, OptionGroup, Option, Location, Coupon, Offer, Order } from '../types';
 import { OptionsManager, LocationsManager, OrdersManager } from '../components/AdminComponents';
@@ -89,6 +90,9 @@ export function AdminPage() {
     ensureAdminWorkspaceLoaded,
     ensureSeoSettingsLoaded,
     updateSeoSettings,
+    pageBanners,
+    ensurePageBannersLoaded,
+    updatePageBanners,
     apiRequest,
   } = useApp();
 
@@ -118,6 +122,7 @@ export function AdminPage() {
     void ensureAdminWorkspaceLoaded();
     if (isAdminOnly) {
       void ensureSeoSettingsLoaded();
+      void ensurePageBannersLoaded();
     }
     if (isAdminOnly) {
       void loadAdminUsers();
@@ -405,6 +410,7 @@ export function AdminPage() {
           </TabsTrigger>
           <TabsTrigger value="coupons">Coupons</TabsTrigger>
           <TabsTrigger value="offers">Offers</TabsTrigger>
+          {isAdminOnly ? <TabsTrigger value="banners">Banners</TabsTrigger> : null}
           {isAdminOnly ? <TabsTrigger value="seo">SEO</TabsTrigger> : null}
           {isAdminOnly ? <TabsTrigger value="users">Users</TabsTrigger> : null}
         </TabsList>
@@ -503,6 +509,15 @@ export function AdminPage() {
             deleteOffer={deleteOffer}
           />
         </TabsContent>
+
+        {isAdminOnly ? (
+          <TabsContent value="banners">
+            <BannersManager
+              rows={pageBanners}
+              saveRows={updatePageBanners}
+            />
+          </TabsContent>
+        ) : null}
 
         {isAdminOnly ? (
           <TabsContent value="seo">
@@ -643,6 +658,107 @@ function SeoSettingsManager({
         ))}
         <Button onClick={() => void handleSave()} disabled={saving}>
           {saving ? 'Saving…' : 'Save SEO Settings'}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+const BANNER_PAGE_OPTIONS = [
+  { key: 'home', label: 'Home' },
+  { key: 'menu', label: 'Menu' },
+  { key: 'offers', label: 'Offers' },
+  { key: 'coupons', label: 'Coupons' },
+];
+
+type BannerEditorRow = {
+  page_key: string;
+  label: string;
+  image_url: string;
+};
+
+function BannersManager({
+  rows,
+  saveRows,
+}: {
+  rows: Array<{ pageKey: string; imageUrl: string }>;
+  saveRows: (payload: Array<{ page_key: string; image_url: string }>) => Promise<any>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [editorRows, setEditorRows] = useState<BannerEditorRow[]>([]);
+
+  useEffect(() => {
+    const byKey = new Map(rows.map((r) => [r.pageKey, r]));
+    setEditorRows(
+      BANNER_PAGE_OPTIONS.map((p) => ({
+        page_key: p.key,
+        label: p.label,
+        image_url: byKey.get(p.key)?.imageUrl ?? '',
+      }))
+    );
+  }, [rows]);
+
+  const updateRow = (pageKey: string, value: string) => {
+    setEditorRows((prev) =>
+      prev.map((r) => (r.page_key === pageKey ? { ...r, image_url: value } : r))
+    );
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveRows(
+        editorRows.map((r) => ({
+          page_key: r.page_key,
+          image_url: r.image_url.trim(),
+        }))
+      );
+      toast.success('Banner images saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save banner images');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Page banner images</CardTitle>
+        <p className="text-sm text-gray-600">
+          Set the main banner image for each page. Paste an image URL. Leave blank to use the
+          built-in default image for that page.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {editorRows.map((row) => (
+          <div key={row.page_key} className="rounded-lg border p-4">
+            <p className="mb-3 text-sm font-semibold text-gray-700">{row.label}</p>
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+              <div>
+                <Label htmlFor={`banner-url-${row.page_key}`}>Image URL</Label>
+                <Input
+                  id={`banner-url-${row.page_key}`}
+                  value={row.image_url}
+                  onChange={(e) => updateRow(row.page_key, e.target.value)}
+                  placeholder="https://example.com/banner.jpg"
+                  className="mt-1"
+                />
+              </div>
+              {row.image_url.trim() ? (
+                <div className="h-20 w-36 overflow-hidden rounded-md border bg-gray-50">
+                  <ImageWithFallback
+                    src={row.image_url}
+                    alt={`${row.label} banner preview`}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ))}
+        <Button onClick={() => void handleSave()} disabled={saving}>
+          {saving ? 'Saving…' : 'Save Banner Images'}
         </Button>
       </CardContent>
     </Card>
@@ -1654,10 +1770,11 @@ function CategoriesManager({ categories, addCategory, updateCategory, deleteCate
     description: '',
     image: '',
     order: '',
+    showOnHome: true,
   });
 
   const resetForm = () => {
-    setFormData({ name: '', description: '', image: '', order: '' });
+    setFormData({ name: '', description: '', image: '', order: '', showOnHome: true });
     setEditingCategory(null);
   };
 
@@ -1668,6 +1785,7 @@ function CategoriesManager({ categories, addCategory, updateCategory, deleteCate
       description: category.description,
       image: category.image,
       order: category.order.toString(),
+      showOnHome: category.showOnHome ?? true,
     });
     setIsOpen(true);
   };
@@ -1680,6 +1798,7 @@ function CategoriesManager({ categories, addCategory, updateCategory, deleteCate
       description: formData.description,
       image: formData.image,
       order: parseInt(formData.order) || 0,
+      showOnHome: formData.showOnHome,
     };
 
     if (editingCategory) {
@@ -1758,6 +1877,14 @@ function CategoriesManager({ categories, addCategory, updateCategory, deleteCate
                     onChange={(e) => setFormData({ ...formData, order: e.target.value })}
                   />
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="cat-show-on-home"
+                    checked={formData.showOnHome}
+                    onCheckedChange={(checked) => setFormData({ ...formData, showOnHome: checked })}
+                  />
+                  <Label htmlFor="cat-show-on-home">Show on home page</Label>
+                </div>
               </div>
               <DialogFooter>
                 <Button type="submit">{editingCategory ? 'Update' : 'Add'} Category</Button>
@@ -1773,6 +1900,7 @@ function CategoriesManager({ categories, addCategory, updateCategory, deleteCate
               <TableHead>Name</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Order</TableHead>
+              <TableHead>Home</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -1782,6 +1910,11 @@ function CategoriesManager({ categories, addCategory, updateCategory, deleteCate
                 <TableCell className="font-medium">{category.name}</TableCell>
                 <TableCell>{category.description}</TableCell>
                 <TableCell>{category.order}</TableCell>
+                <TableCell>
+                  <Badge variant={category.showOnHome ? 'default' : 'secondary'}>
+                    {category.showOnHome ? 'Shown' : 'Hidden'}
+                  </Badge>
+                </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
                     <Button variant="ghost" size="icon" onClick={() => handleEdit(category)}>

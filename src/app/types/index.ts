@@ -17,6 +17,8 @@ export interface Category {
   description: string;
   image: string;
   order: number;
+  /** Whether this category appears in the home page categories slider. */
+  showOnHome: boolean;
 }
 
 export interface OptionGroup {
@@ -47,6 +49,8 @@ export interface Option {
   name: string;
   price: number;
   active: boolean;
+  /** Highlights this choice with a "Popular" badge on the customer menu. */
+  isPopular: boolean;
 }
 
 /** Home banner / public status: auto uses opensAt + closesAt; force_* overrides schedule. */
@@ -180,4 +184,10 @@ export interface SeoSetting {
   pageKey: string;
   metaTitle: string;
   metaDescription: string;
+}
+
+export interface PageBanner {
+  id: string;
+  pageKey: string;
+  imageUrl: string;
 }

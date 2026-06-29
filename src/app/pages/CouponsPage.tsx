@@ -58,6 +58,8 @@ export function CouponsPage() {
       <HomePageBanner
         title="Coupons & Savings"
         subtitle="Find active coupon codes and apply them at checkout to save on your next order."
+        pageKey="coupons"
+        backgroundImage="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=2000&q=80"
       />
       <div className="min-h-screen bg-gray-50 py-12">
         <div className="container mx-auto px-4">

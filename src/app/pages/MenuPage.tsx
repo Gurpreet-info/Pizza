@@ -139,6 +139,8 @@ export function MenuPage() {
       <HomePageBanner
         title="Explore Our Menu"
         subtitle="Browse categories, customize your favorites, and order fresh food made your way."
+        pageKey="menu"
+        backgroundImage="https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=2000&q=80"
       />
       <div className="container mx-auto min-w-0 px-4 py-8">
       <h1 className="text-4xl font-bold mb-8">Our Menu</h1>

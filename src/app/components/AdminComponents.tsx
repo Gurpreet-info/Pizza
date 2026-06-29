@@ -768,6 +768,7 @@ function OptionsListManager({
     optionGroupIds: [] as string[],
     price: '',
     active: true,
+    isPopular: false,
   });
 
   const optionsTableRows = useMemo(() => {
@@ -781,6 +782,7 @@ function OptionsListManager({
         String(opt.price),
         groupNames,
         opt.active === false ? 'inactive' : 'active',
+        opt.isPopular ? 'popular' : '',
         opt.id,
       ]
         .join(' ')
@@ -790,7 +792,7 @@ function OptionsListManager({
   }, [options, optionGroups, menuItems, optionsTableSearch]);
 
   const resetForm = () => {
-    setFormData({ name: '', optionGroupIds: [], price: '', active: true });
+    setFormData({ name: '', optionGroupIds: [], price: '', active: true, isPopular: false });
     setEditingOption(null);
   };
 
@@ -811,6 +813,7 @@ function OptionsListManager({
             : [],
       price: option.price.toString(),
       active: option.active !== false,
+      isPopular: option.isPopular === true,
     });
     setIsOpen(true);
   };
@@ -828,6 +831,7 @@ function OptionsListManager({
       optionGroupIds: formData.optionGroupIds,
       price: parseFloat(formData.price) || 0,
       active: formData.active,
+      isPopular: formData.isPopular,
     };
 
     if (editingOption) {
@@ -918,6 +922,14 @@ function OptionsListManager({
               />
               <Label htmlFor="option-active">Active (visible on menu)</Label>
             </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="option-popular"
+                checked={formData.isPopular}
+                onCheckedChange={(checked) => setFormData({ ...formData, isPopular: checked })}
+              />
+              <Label htmlFor="option-popular">Popular (show a "Popular" tag on the menu)</Label>
+            </div>
           </form>
         </AdminFormSheet>
       </CardHeader>
@@ -937,16 +949,17 @@ function OptionsListManager({
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Group</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Active</TableHead>
+              <TableHead>Popular</TableHead>
               <TableHead>Actions</TableHead>
+              <TableHead>Group</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {optionsTableRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground text-center py-8">
+                <TableCell colSpan={6} className="text-muted-foreground text-center py-8">
                   No options match your search.
                 </TableCell>
               </TableRow>
@@ -956,12 +969,18 @@ function OptionsListManager({
               return (
                 <TableRow key={option.id}>
                   <TableCell className="font-medium">{option.name}</TableCell>
-                  <TableCell>{groupLabel || '—'}</TableCell>
                   <TableCell>${option.price.toFixed(2)}</TableCell>
                   <TableCell>
                     <Badge variant={option.active === false ? 'secondary' : 'default'}>
                       {option.active === false ? 'Inactive' : 'Active'}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {option.isPopular ? (
+                      <Badge>Popular</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
@@ -973,6 +992,7 @@ function OptionsListManager({
                       </Button>
                     </div>
                   </TableCell>
+                  <TableCell>{groupLabel || '—'}</TableCell>
                 </TableRow>
               );
             })
