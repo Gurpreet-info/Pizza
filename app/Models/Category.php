@@ -7,7 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Category extends Model
 {
-    protected $fillable = ['name', 'description', 'image', 'display_order'];
+    protected $fillable = ['name', 'description', 'image', 'display_order', 'show_on_home'];
+
+    protected $casts = [
+        'show_on_home' => 'boolean',
+    ];
 
     public function menuItems(): BelongsToMany
     {

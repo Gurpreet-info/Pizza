@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OtpController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\SeoSettingController;
+use App\Http\Controllers\Api\PageBannerController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -66,6 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('admin')->group(function () {
         Route::apiResource('users', UserController::class)->except(['show']);
         Route::put('/seo-settings', [SeoSettingController::class, 'upsert']);
+        Route::put('/page-banners', [PageBannerController::class, 'upsert']);
     });
 });
 
@@ -79,5 +81,6 @@ Route::get('/locations', [LocationController::class, 'index']);
 Route::get('/delivery-postal-codes', [DeliveryPostalCodeController::class, 'publicIndex']);
 Route::get('/offers', [OfferController::class, 'index']);
 Route::get('/seo-settings', [SeoSettingController::class, 'index']);
+Route::get('/page-banners', [PageBannerController::class, 'index']);
 Route::get('/coupons/validate/{code}', [CouponController::class, 'validateCode']);
 

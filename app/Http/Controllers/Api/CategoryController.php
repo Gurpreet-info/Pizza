@@ -18,6 +18,7 @@ class CategoryController extends BaseCrudController
             'description' => ['nullable', 'string'],
             'image' => ['nullable', 'string', 'max:500'],
             'display_order' => ['nullable', 'integer', 'min:0'],
+            'show_on_home' => ['nullable', 'boolean'],
         ];
     }
 }

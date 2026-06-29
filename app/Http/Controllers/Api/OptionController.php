@@ -75,6 +75,7 @@ class OptionController extends BaseCrudController
             'name' => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:255'],
             'price' => ['nullable', 'numeric', 'min:0'],
             'active' => ['nullable', 'boolean'],
+            'is_popular' => ['nullable', 'boolean'],
         ];
     }
 

@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Option extends Model
 {
-    protected $fillable = ['name', 'price', 'active'];
+    protected $fillable = ['name', 'price', 'active', 'is_popular'];
 
     protected $casts = [
         'price' => 'decimal:2',
         'active' => 'boolean',
+        'is_popular' => 'boolean',
     ];
 
     public function optionGroups(): BelongsToMany
