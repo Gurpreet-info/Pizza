@@ -152,7 +152,7 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001/api';
 const TOKEN_KEY = 'authToken';
 const CHECKOUT_REVEAL_PASSWORD_KEY = 'pizzaCheckoutRevealPassword';
 

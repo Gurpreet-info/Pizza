@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -33,6 +33,8 @@ import {
   OptionGroupPicker,
   OptionGroupsMultiSelect,
 } from './AdminFormSheet';
+import * as htmlToImage from "html-to-image";
+import { Share2 } from "lucide-react";
 
 /** Matches checkout: `CheckoutPage` uses 13% HST on (subtotal − discounts + delivery). */
 const RECEIPT_HST_PERCENT = 13;
@@ -113,6 +115,7 @@ function OrderReceiptContent({ order, locations }: { order: Order; locations: Lo
         </div>
         <div>{order.customerName}</div>
         <div>{order.customerPhone}</div>
+        <div>{order.customerEmail}</div>
         <div className="mt-2 font-semibold">
           {order.orderType === 'delivery' ? 'Delivery address' : 'Pickup'}
         </div>
@@ -1276,6 +1279,7 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
   const [displayOrders, setDisplayOrders] = useState<Order[] | null>(null);
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -1349,6 +1353,53 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
 
   const formatMoney = (value?: number) => `$${Number(value || 0).toFixed(2)}`;
 
+  const handleShareReceipt = async () => {
+    if (!receiptRef.current || !receiptOrder) return;
+
+    try {
+      // Generate PNG from receipt
+      const dataUrl = await htmlToImage.toPng(receiptRef.current, {
+        quality: 1,
+        pixelRatio: 3,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+      });
+
+      const blob = await (await fetch(dataUrl)).blob();
+
+      const file = new File(
+        [blob],
+        `Receipt-${receiptOrder.id}.png`,
+        {
+          type: "image/png",
+        }
+      );
+
+      // Mobile sharing (WhatsApp, etc.)
+      if (
+        navigator.share &&
+        navigator.canShare?.({
+          files: [file],
+        })
+      ) {
+        await navigator.share({
+          title: `Receipt #${receiptOrder.id}`,
+          text: "Pizza Receipt",
+          files: [file],
+        });
+        return;
+      }
+
+      // Desktop fallback (downloads the image)
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `Receipt-${receiptOrder.id}.png`;
+      a.click();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
     <Card>
       <Dialog
@@ -1357,12 +1408,58 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
           if (!open) setReceiptOrder(null);
         }}
       >
-        <DialogContent className="max-h-[92vh] max-w-md overflow-y-auto sm:max-w-md print:max-h-none print:overflow-visible print:border-none print:bg-transparent print:p-0 print:shadow-none">
+        <DialogContent
+          className="
+            max-h-[92vh]
+            max-w-md
+            overflow-y-auto
+            sm:max-w-md
+
+            print:fixed
+            print:top-0
+            print:left-1/2
+            print:-translate-x-1/2
+            print:translate-y-0
+
+            print:w-[80mm]
+            print:max-w-[80mm]
+
+            print:max-h-none
+            print:overflow-visible
+            print:border-none
+            print:bg-white
+            print:p-0
+            print:shadow-none
+          "
+        >
           <DialogHeader className="print:hidden">
             <DialogTitle>Receipt — Order #{receiptOrder?.id ?? ''}</DialogTitle>
             <DialogDescription className="sr-only">Printable order receipt for kitchen or customer</DialogDescription>
           </DialogHeader>
-          <div className="mb-3 print:hidden">
+          <div className="mb-3 flex gap-2 print:hidden">
+            {/* <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => window.print()}
+            >
+              <Printer className="h-4 w-4" />
+              Print Receipt
+            </Button> */}
+
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              className="gap-1.5"
+              onClick={handleShareReceipt}
+            >
+              <Share2 className="h-4 w-4" />
+              Share Receipt
+            </Button>
+          </div>
+          {/* <div className="mb-3 print:hidden">
             <Button
               type="button"
               variant="secondary"
@@ -1373,8 +1470,17 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
               <Printer className="h-4 w-4" aria-hidden />
               Print receipt
             </Button>
-          </div>
-          {receiptOrder ? <OrderReceiptContent order={receiptOrder} locations={locations} /> : null}
+          </div> */}
+          {/* {receiptOrder ? <OrderReceiptContent order={receiptOrder} locations={locations} /> : null} */}
+          {receiptOrder ? (
+              <div ref={receiptRef}>
+                <OrderReceiptContent
+                  order={receiptOrder}
+                  locations={locations}
+                />
+              </div>
+            ) : null
+          }
         </DialogContent>
       </Dialog>
 
@@ -1487,13 +1593,13 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[120px]">Order</TableHead>
-                <TableHead className="min-w-[220px]">Customer</TableHead>
-                <TableHead className="min-w-[220px]">Fulfillment</TableHead>
-                <TableHead className="min-w-[280px]">Items</TableHead>
-                <TableHead className="min-w-[160px]">Discounts</TableHead>
-                <TableHead className="w-[120px]">Total</TableHead>
-                <TableHead className="w-[220px]">Status</TableHead>
+                <TableHead className="w-[100px]">Order</TableHead>
+                {/* <TableHead className="min-w-[220px]">Customer</TableHead> */}
+                <TableHead className="min-w-[100px]">Fulfillment</TableHead>
+                <TableHead className="min-w-[100px]">Items</TableHead>
+                <TableHead className="min-w-[100px]">Discounts/Total</TableHead>
+                {/* <TableHead className="w-[120px]">Total</TableHead> */}
+                {/* <TableHead className="w-[220px]">Status</TableHead> */}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1503,9 +1609,28 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
                 return (
                   <TableRow key={order.id} className="align-top">
                     <TableCell className="py-2 text-xs">
+                      {/* <div className='py-1'>
+                        Status: <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
+                      </div> */}
+                      <Select
+                        value={order.status}
+                        onValueChange={(value: Order['status']) => handleStatusChange(order.id, value)}
+                      >
+                        <SelectTrigger id={`status-${order.id}`} className="h-8 text-xs bg-gray-300 mb-5">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="confirmed">Confirmed</SelectItem>
+                          <SelectItem value="preparing">Preparing</SelectItem>
+                          <SelectItem value="ready">Ready</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <button
                         type="button"
-                        className="text-left font-semibold text-sm leading-5 text-orange-700 underline-offset-2 hover:underline"
+                        className=" text-left font-semibold text-sm leading-5 text-orange-700 underline-offset-2 hover:underline"
                         onClick={() => {
                           setReceiptOrder(order);
                           setDetailOrder(null);
@@ -1532,34 +1657,36 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
                     </TableCell>
                     <TableCell className="py-2 text-xs leading-4">
                       <div className="font-medium text-sm leading-5">{order.customerName}</div>
-                      <div className="text-gray-600">{order.customerEmail}</div>
-                      <div className="text-gray-600">{order.customerPhone}</div>
+                      {/* <div className="text-gray-600">{order.customerEmail}</div> */}
+                      <div className="text-gray-600">{order.customerPhone}</div>                        
+                      <div className="font-medium text-sm leading-5 pt-5">
+                        <Badge
+                          variant={order.orderType === 'pickup' ? 'default' : 'destructive'}
+                          className="mb-1 capitalize"
+                        >
+                          {order.orderType}
+                        </Badge>
+                        {order.orderType === 'pickup' ? (
+                          <div className="text-gray-700">
+                            {location ? (
+                              <>
+                                <div className="font-medium">{location.name}</div>
+                                {/* <div>{location.address}</div> */}
+                              </>
+                            ) : (
+                              <div>Pickup location not found</div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-gray-700">
+                            <div>{order.deliveryAddress || 'No delivery address'}</div>
+                            {order.deliveryPostalCode ? <div>Postal: {order.deliveryPostalCode}</div> : null}
+                          </div>
+                        )}
+                      </div>
+                     
                     </TableCell>
-                    <TableCell className="py-2 text-xs leading-4">
-                      <Badge
-                        variant={order.orderType === 'pickup' ? 'default' : 'destructive'}
-                        className="mb-1 capitalize"
-                      >
-                        {order.orderType}
-                      </Badge>
-                      {order.orderType === 'pickup' ? (
-                        <div className="text-gray-700">
-                          {location ? (
-                            <>
-                              <div className="font-medium">{location.name}</div>
-                              <div>{location.address}</div>
-                            </>
-                          ) : (
-                            <div>Pickup location not found</div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="text-gray-700">
-                          <div>{order.deliveryAddress || 'No delivery address'}</div>
-                          {order.deliveryPostalCode ? <div>Postal: {order.deliveryPostalCode}</div> : null}
-                        </div>
-                      )}
-                    </TableCell>
+                    
                     <TableCell className="py-2 text-xs leading-4">
                       <button
                         type="button"
@@ -1575,7 +1702,7 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
                         ) : (
                           <div className="space-y-1">
                             {order.items.map((item) => (
-                              <div key={item.id} className="rounded-sm border border-gray-100 bg-gray-50/60 px-2 py-1">
+                              <div key={item.id} className="rounded-sm border border-gray-100 bg-gray-300 px-2 py-1">
                                 <div>
                                   <span className="font-medium">{item.menuItem.name}</span> x{item.quantity}
                                   <span className="text-gray-600"> ({formatMoney(item.totalPrice * item.quantity)})</span>
@@ -1626,29 +1753,16 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
                       ) : (
                         <span className="text-gray-500">None</span>
                       )}
-                    </TableCell>
-                    <TableCell className="py-2 text-sm font-bold text-orange-600">{formatMoney(order.total)}</TableCell>
-                    <TableCell className="py-2">
-                      <div className="space-y-2">
-                        <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
-                        <Select
-                          value={order.status}
-                          onValueChange={(value: Order['status']) => handleStatusChange(order.id, value)}
-                        >
-                          <SelectTrigger id={`status-${order.id}`} className="h-8 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="confirmed">Confirmed</SelectItem>
-                            <SelectItem value="preparing">Preparing</SelectItem>
-                            <SelectItem value="ready">Ready</SelectItem>
-                            <SelectItem value="completed">Completed</SelectItem>
-                            <SelectItem value="cancelled">Cancelled</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div className="mt-1 space-y-0.5 text-[18px] text-dark-600">
+                        <div className="font-medium font-bold text-orange-600">
+                          Total: {formatMoney(order.total)}
+                        </div>
                       </div>
                     </TableCell>
+                    {/* <TableCell className="py-2 text-sm font-bold text-orange-600">
+                      
+                    </TableCell> */}
+                    
                   </TableRow>
                 );
               })}

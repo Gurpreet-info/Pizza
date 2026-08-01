@@ -131,7 +131,7 @@ export function AdminPage() {
     }
   }, [canAccessAdmin, isAdminOnly]);
 
-  const [adminTab, setAdminTab] = useState('dashboard');
+  const [adminTab, setAdminTab] = useState('orders');
   const [lastAckOrderId, setLastAckOrderId] = useState(() => {
     if (typeof sessionStorage === 'undefined') return 0;
     const raw = sessionStorage.getItem(ADMIN_ORDER_ACK_KEY);
@@ -390,12 +390,12 @@ export function AdminPage() {
 
       <Tabs value={adminTab} onValueChange={onAdminTabChange}>
         <TabsList className="mb-6 flex-wrap h-auto min-h-9">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="menu-items">Menu Items</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="options">Options</TabsTrigger>
-          <TabsTrigger value="locations">Locations</TabsTrigger>
-          <TabsTrigger value="delivery-zones">Delivery zones</TabsTrigger>
+          {isAdminOnly ?<TabsTrigger value="dashboard">Dashboard</TabsTrigger>  : null}
+          {isAdminOnly ? <TabsTrigger value="menu-items">Menu Items</TabsTrigger> : null}
+          {isAdminOnly ? <TabsTrigger value="categories">Categories</TabsTrigger> : null}
+          {isAdminOnly ? <TabsTrigger value="options">Options</TabsTrigger> : null}
+          {isAdminOnly ? <TabsTrigger value="locations">Locations</TabsTrigger> : null}
+          {isAdminOnly ? <TabsTrigger value="delivery-zones">Delivery zones</TabsTrigger> : null}
           <TabsTrigger value="orders" className="relative gap-1.5 pr-4">
             <Bell className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
             Orders
@@ -408,79 +408,86 @@ export function AdminPage() {
               </span>
             ) : null}
           </TabsTrigger>
-          <TabsTrigger value="coupons">Coupons</TabsTrigger>
-          <TabsTrigger value="offers">Offers</TabsTrigger>
+          {isAdminOnly ? <TabsTrigger value="coupons">Coupons</TabsTrigger> : null}
+          {isAdminOnly ? <TabsTrigger value="offers">Offers</TabsTrigger> : null}
           {isAdminOnly ? <TabsTrigger value="banners">Banners</TabsTrigger> : null}
           {isAdminOnly ? <TabsTrigger value="seo">SEO</TabsTrigger> : null}
           {isAdminOnly ? <TabsTrigger value="users">Users</TabsTrigger> : null}
         </TabsList>
 
-        {/* Dashboard Tab */}
-        <TabsContent value="dashboard">
-          <DashboardStats apiRequest={apiRequest} isAdmin={isAdminOnly} />
-        </TabsContent>
+        {isAdminOnly ? (
+          <TabsContent value="dashboard">
+            <DashboardStats apiRequest={apiRequest} isAdmin={isAdminOnly} />
+          </TabsContent>
+        ) : null}
+        
+        {isAdminOnly ? (
+          <TabsContent value="menu-items">
+            <MenuItemsManager
+              menuItems={menuItems}
+              categories={categories}
+              optionGroups={optionGroups}
+              options={options}
+              addMenuItem={addMenuItem}
+              updateMenuItem={updateMenuItem}
+              deleteMenuItem={deleteMenuItem}
+              addOptionGroup={addOptionGroup}
+              updateOptionGroup={updateOptionGroup}
+              syncMenuItemOptionGroupOrder={syncMenuItemOptionGroupOrder}
+            />
+          </TabsContent>
+        ) : null}
 
-        {/* Menu Items Tab */}
-        <TabsContent value="menu-items">
-          <MenuItemsManager
-            menuItems={menuItems}
-            categories={categories}
-            optionGroups={optionGroups}
-            options={options}
-            addMenuItem={addMenuItem}
-            updateMenuItem={updateMenuItem}
-            deleteMenuItem={deleteMenuItem}
-            addOptionGroup={addOptionGroup}
-            updateOptionGroup={updateOptionGroup}
-            syncMenuItemOptionGroupOrder={syncMenuItemOptionGroupOrder}
-          />
-        </TabsContent>
+        {isAdminOnly ? (
+          <TabsContent value="categories">
+            <CategoriesManager
+              categories={categories}
+              addCategory={addCategory}
+              updateCategory={updateCategory}
+              deleteCategory={deleteCategory}
+            />
+          </TabsContent>
+        ) : null}
 
-        {/* Categories Tab */}
-        <TabsContent value="categories">
-          <CategoriesManager
-            categories={categories}
-            addCategory={addCategory}
-            updateCategory={updateCategory}
-            deleteCategory={deleteCategory}
-          />
-        </TabsContent>
+        {isAdminOnly ? (
+          <TabsContent value="options">
+            <OptionsManager
+              menuItems={menuItems}
+              optionGroups={optionGroups}
+              options={options}
+              addOptionGroup={addOptionGroup}
+              updateOptionGroup={updateOptionGroup}
+              deleteOptionGroup={deleteOptionGroup}
+              addOption={addOption}
+              updateOption={updateOption}
+              deleteOption={deleteOption}
+            />
+          </TabsContent>
+        ) : null}
 
-        {/* Options Tab */}
-        <TabsContent value="options">
-          <OptionsManager
-            menuItems={menuItems}
-            optionGroups={optionGroups}
-            options={options}
-            addOptionGroup={addOptionGroup}
-            updateOptionGroup={updateOptionGroup}
-            deleteOptionGroup={deleteOptionGroup}
-            addOption={addOption}
-            updateOption={updateOption}
-            deleteOption={deleteOption}
-          />
-        </TabsContent>
+        {isAdminOnly ? (
+          <TabsContent value="locations">
+            <LocationsManager
+              locations={locations}
+              addLocation={addLocation}
+              updateLocation={updateLocation}
+              deleteLocation={deleteLocation}
+            />
+          </TabsContent>
+        ) : null}
 
-        {/* Locations Tab */}
-        <TabsContent value="locations">
-          <LocationsManager
-            locations={locations}
-            addLocation={addLocation}
-            updateLocation={updateLocation}
-            deleteLocation={deleteLocation}
-          />
-        </TabsContent>
+        {isAdminOnly ? (
+          <TabsContent value="delivery-zones">
+            <DeliveryPostalCodesManager
+              rows={deliveryPostalCodesAdmin}
+              addRow={addDeliveryPostalCode}
+              updateRow={updateDeliveryPostalCode}
+              deleteRow={deleteDeliveryPostalCode}
+            />
+          </TabsContent>
+        ) : null}
 
-        <TabsContent value="delivery-zones">
-          <DeliveryPostalCodesManager
-            rows={deliveryPostalCodesAdmin}
-            addRow={addDeliveryPostalCode}
-            updateRow={updateDeliveryPostalCode}
-            deleteRow={deleteDeliveryPostalCode}
-          />
-        </TabsContent>
-
-        {/* Orders Tab */}
+       
         <TabsContent value="orders">
           <OrdersManager
             orders={orders}
@@ -489,26 +496,29 @@ export function AdminPage() {
             updateOrderStatus={updateOrderStatus}
           />
         </TabsContent>
+       
 
-        {/* Coupons Tab */}
-        <TabsContent value="coupons">
-          <CouponsManager
-            coupons={coupons}
-            addCoupon={addCoupon}
-            updateCoupon={updateCoupon}
-            deleteCoupon={deleteCoupon}
-          />
-        </TabsContent>
+        {isAdminOnly ? (
+          <TabsContent value="coupons">
+            <CouponsManager
+              coupons={coupons}
+              addCoupon={addCoupon}
+              updateCoupon={updateCoupon}
+              deleteCoupon={deleteCoupon}
+            />
+          </TabsContent>
+        ) : null}
 
-        {/* Offers Tab */}
-        <TabsContent value="offers">
-          <OffersManager
-            offers={offers}
-            addOffer={addOffer}
-            updateOffer={updateOffer}
-            deleteOffer={deleteOffer}
-          />
-        </TabsContent>
+        {isAdminOnly ? (
+          <TabsContent value="offers">
+            <OffersManager
+              offers={offers}
+              addOffer={addOffer}
+              updateOffer={updateOffer}
+              deleteOffer={deleteOffer}
+            />
+          </TabsContent>
+        ) : null}
 
         {isAdminOnly ? (
           <TabsContent value="banners">
