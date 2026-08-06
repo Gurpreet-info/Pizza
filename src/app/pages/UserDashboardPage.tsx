@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { formatSelectedOptionNames } from '../lib/formatSelectedOptions';
-import { CartItem, Order } from '../types';
+import { CartItem, Order, Location } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -12,6 +12,12 @@ import { Label } from '../components/ui/label';
 import { Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { Receipt } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '../components/ui/dialog';
+import { Share2 } from "lucide-react";
+import * as htmlToImage from "html-to-image";
+
+const RECEIPT_HST_PERCENT = 13;
 
 const formatStatusLabel = (status: string) =>
   status.length ? status.charAt(0).toUpperCase() + status.slice(1) : status;
@@ -130,13 +136,159 @@ function OrderPricingFooter({ order }: { order: Order }) {
   );
 }
 
+function getOrderPricingBreakdown(order: Order) {
+  const taxableBeforeTax = Number((order.total - order.tax).toFixed(2));
+  const couponOff = order.couponDiscount ?? 0;
+  const offerOff = order.offerDiscount ?? 0;
+  const deliveryFee =
+    order.orderType === 'delivery'
+      ? Math.max(
+          0,
+          Number((taxableBeforeTax - order.subtotal + offerOff + couponOff).toFixed(2))
+        )
+      : 0;
+  return { taxableBeforeTax, couponOff, offerOff, deliveryFee };
+}
+
+function OrderReceiptContent({ order, locations }: { order: Order; locations: Location[] }) {
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
+  const store =
+    (order.locationId ? locations.find((l) => l.id === order.locationId) : undefined) ?? locations[0];
+  const storeName = store?.name || 'Pizza Offers';
+  const storePhone = store?.phone || '—';
+  const storeAddress = store?.address || '—';
+
+  const { couponOff, offerOff, deliveryFee } = getOrderPricingBreakdown(order);
+
+  const when = new Date(order.createdAt).toLocaleString('en-CA', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const fulfillmentLines =
+    order.orderType === 'pickup'
+      ? [
+          store ? `${store.name}` : 'Pickup',
+          store ? store.address : '',
+        ].filter(Boolean)
+      : [order.deliveryAddress || '—', order.deliveryPostalCode ? `Postal: ${order.deliveryPostalCode}` : ''].filter(
+          Boolean
+        );
+
+  return (
+    <div className="receipt-print rounded-sm border-2 border-dashed border-gray-800 bg-white p-4 font-mono text-[11px] leading-snug text-black shadow-inner print:border print:border-gray-400 print:shadow-none">
+      <div className="border-b border-dashed border-gray-600 pb-3 text-center">
+        <div className="text-sm font-bold tracking-tight">{storeName.toUpperCase()}</div>
+        <div>{storePhone}</div>
+        <div className="mt-2 font-bold">ONLINE ORDER</div>
+        <div className="mt-1 text-[10px]">{storeAddress}</div>
+      </div>
+
+      <div className="border-b border-dashed border-gray-600 py-3">
+        <div className="flex justify-between font-bold">
+          <span />
+          <span className="uppercase">{order.orderType}</span>
+        </div>
+        <div>{when}</div>
+        <div className="mt-1">
+          <span className="font-semibold">Order</span> {order.id}
+        </div>
+        <div>{order.customerName}</div>
+        <div>{order.customerPhone}</div>
+        <div>{order.customerEmail}</div>
+        <div className="mt-2 font-semibold">
+          {order.orderType === 'delivery' ? 'Delivery address' : 'Pickup'}
+        </div>
+        {fulfillmentLines.map((line, i) => (
+          <div key={i}>{line}</div>
+        ))}
+      </div>
+
+      <div className="space-y-3 border-b border-dashed border-gray-600 py-3">
+        {order.items.length === 0 ? (
+          <div className="text-gray-600">(No line items stored for this order)</div>
+        ) : (
+          order.items.map((line: CartItem) => (
+            <div key={line.id}>
+              <div className="font-bold uppercase">
+                {line.menuItem.name}
+                {line.quantity > 1 ? ` ×${line.quantity}` : ''}
+              </div>
+              {line.selectedOptions.map((group) => (
+                <div key={group.optionGroupId} className="pl-2 text-[10px]">
+                  <span className="font-semibold">{group.optionGroupName}:</span>{' '}
+                  {group.options.map((o) => (o.price > 0 ? `${o.name} (+${fmt(o.price)})` : o.name)).join(', ')}
+                </div>
+              ))}
+              {line.specialInstructions ? (
+                <div className="pl-2 text-[10px] italic">Note: {line.specialInstructions}</div>
+              ) : null}
+              <div className="pl-2 text-[10px]">{fmt(line.totalPrice * line.quantity)}</div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="space-y-1 border-b border-dashed border-gray-600 py-3">
+        <div className="flex justify-between">
+          <span>Subtotal</span>
+          <span>{fmt(order.subtotal)}</span>
+        </div>
+        {offerOff > 0 ? (
+          <div className="flex justify-between">
+            <span>Offer discount</span>
+            <span>-{fmt(offerOff)}</span>
+          </div>
+        ) : null}
+        {couponOff > 0 ? (
+          <div className="flex justify-between">
+            <span>Coupon {order.couponCode ? `(${order.couponCode})` : ''}</span>
+            <span>-{fmt(couponOff)}</span>
+          </div>
+        ) : null}
+        {order.orderType === 'delivery' ? (
+          <div className="flex justify-between">
+            <span>Delivery charges</span>
+            <span>{fmt(deliveryFee)}</span>
+          </div>
+        ) : null}
+        <div className="flex justify-between">
+          <span>Tax (HST {RECEIPT_HST_PERCENT}%)</span>
+          <span>{fmt(order.tax)}</span>
+        </div>
+      </div>
+
+      <div className="py-3">
+        <div className="flex justify-between text-sm font-bold">
+          <span>TOTAL</span>
+          <span>{fmt(order.total)}</span>
+        </div>
+        <div className="mt-2 flex justify-between">
+          <span>Payment</span>
+          <span className="font-semibold uppercase">Online order</span>
+        </div>
+      </div>
+
+      <div className="border-t border-dashed border-gray-600 pt-3 text-center text-[10px]">
+        Thank you for ordering from Pizza Offers!
+      </div>
+    </div>
+  );
+}
+
 export function UserDashboardPage() {
   usePageMeta(
     'My orders',
     'View your Pizza Offers order history, statuses, totals, and account details in one place.',
     'user_dashboard'
   );
-
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const {
     user,
@@ -144,6 +296,7 @@ export function UserDashboardPage() {
     ensureUserDashboardLoaded,
     refreshUserOrdersQuiet,
     checkoutRevealPassword,
+    locations
   } = useApp();
   const [showCheckoutPassword, setShowCheckoutPassword] = useState(false);
   const prevStatusesRef = useRef<Record<string, string>>({});
@@ -216,6 +369,53 @@ export function UserDashboardPage() {
   if (!user) {
     return null;
   }
+
+  const handleShareReceipt = async () => {
+      if (!receiptRef.current || !receiptOrder) return;
+  
+      try {
+        // Generate PNG from receipt
+        const dataUrl = await htmlToImage.toPng(receiptRef.current, {
+          quality: 1,
+          pixelRatio: 3,
+          backgroundColor: "#ffffff",
+          cacheBust: true,
+        });
+  
+        const blob = await (await fetch(dataUrl)).blob();
+  
+        const file = new File(
+          [blob],
+          `Receipt-${receiptOrder.id}.png`,
+          {
+            type: "image/png",
+          }
+        );
+  
+        // Mobile sharing (WhatsApp, etc.)
+        if (
+          navigator.share &&
+          navigator.canShare?.({
+            files: [file],
+          })
+        ) {
+          await navigator.share({
+            title: `Receipt #${receiptOrder.id}`,
+            text: "Pizza Receipt",
+            files: [file],
+          });
+          return;
+        }
+  
+        // Desktop fallback (downloads the image)
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = `Receipt-${receiptOrder.id}.png`;
+        a.click();
+      } catch (err) {
+        console.error(err);
+      }
+    };
 
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
@@ -295,6 +495,67 @@ export function UserDashboardPage() {
 
       {/* Orders */}
       <Card>
+        <Dialog
+        open={receiptOrder !== null}
+        onOpenChange={(open) => {
+          if (!open) setReceiptOrder(null);
+        }}
+      >
+        <DialogContent
+          className="
+            max-h-[92vh]
+            max-w-md
+            overflow-y-auto
+            sm:max-w-md
+
+            print:fixed
+            print:top-0
+            print:left-1/2
+            print:-translate-x-1/2
+            print:translate-y-0
+
+            print:w-[80mm]
+            print:max-w-[80mm]
+
+            print:max-h-none
+            print:overflow-visible
+            print:border-none
+            print:bg-white
+            print:p-0
+            print:shadow-none
+          "
+        >
+          <DialogHeader className="print:hidden">
+            <DialogTitle>Receipt — Order #{receiptOrder?.id ?? ''}</DialogTitle>
+            
+          </DialogHeader>
+          <div className="mb-3 flex gap-2 print:hidden">
+
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              className="gap-1.5"
+              onClick={handleShareReceipt}
+            >
+              <Share2 className="h-4 w-4" />
+              Share Receipt
+            </Button>
+          </div>
+         
+          
+          {receiptOrder ? (
+              <div ref={receiptRef}>
+                <OrderReceiptContent
+                  order={receiptOrder}
+                  locations={locations}
+                />
+              </div>
+            ) : null
+          }
+        </DialogContent>
+      </Dialog>
+
         <CardHeader>
           <CardTitle>Order History</CardTitle>
         </CardHeader>
@@ -344,6 +605,21 @@ export function UserDashboardPage() {
                           timeStyle: 'short'
                         })}
                       </p>
+                      {order.status === 'completed' && (
+                          <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2 h-7 gap-1 px-2 text-xs"
+                              onClick={() => {
+                                setReceiptOrder(order);
+                                setDetailOrder(null);
+                              }}
+                            >
+                        <Receipt className="h-3.5 w-3.5" aria-hidden />
+                        Receipt 
+                      </Button>
+                      )}
                     </div>
                     <div className="flex items-center gap-4">
                       <Badge className={getStatusColor(order.status)}>
@@ -374,6 +650,7 @@ export function UserDashboardPage() {
                         <span> - {order.deliveryAddress}</span>
                       )}
                     </div>
+                                        
                     <Button 
                       variant="outline" 
                       size="sm"
