@@ -61,8 +61,8 @@ export function Footer() {
               <li><Link to="/" className="hover:text-orange-500 transition-colors">Home</Link></li>
               <li><Link to="/popularpizza-menu" className="hover:text-orange-500 transition-colors">Menu</Link></li>
               <li><Link to="/popularpizza-offers" className="hover:text-orange-500 transition-colors">Offers</Link></li>
-              <li><Link to="/locations" className="hover:text-orange-500 transition-colors">Locations</Link></li>
-              <li><Link to="/popularpizza-coupons" className="hover:text-orange-500 transition-colors">Coupons</Link></li>
+              <li><Link to="/about-us" className="hover:text-orange-500 transition-colors">About Us</Link></li>
+              <li><Link to="/privacy-policy" className="hover:text-orange-500 transition-colors">Privacy Policy</Link></li>
             </ul>
           </div>
 
@@ -120,7 +120,7 @@ export function Footer() {
         </div> */}
         <div className="border-t border-gray-800 mt-8 pt-8 text-center text-sm text-gray-400">
           <p className="flex items-center justify-center gap-1">
-            &copy; 2026 Pizza Offers. All rights reserved. Developed By GP: 
+            &copy; 2026 Pizza Offers. All rights reserved. Developed By GP Softwares: 
             
             <a
               href="https://wa.me/919646677913"

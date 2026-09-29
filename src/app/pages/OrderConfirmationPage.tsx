@@ -182,7 +182,7 @@ export function OrderConfirmationPage() {
 
       <div className="mt-8 text-center text-sm text-gray-600">
         <p>A confirmation email has been sent to {order.customerEmail}</p>
-        <p className="mt-2">Need help? Call us at (416) 555-0100</p>
+        <p className="mt-2">Need help? Call us at (905) 494-9333</p>
       </div>
     </div>
   );

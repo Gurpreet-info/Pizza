@@ -211,7 +211,7 @@ export function HomePage() {
                   variant="outline"
                   className="text-base px-7 bg-white text-gray-900 hover:bg-gray-100"
                 >
-                  <a href="tel:+14165550100">
+                  <a href="tel:+9054949333">
                     <Phone className="h-4 w-4 mr-2" />
                     Call Us
                   </a>
@@ -531,7 +531,7 @@ export function HomePage() {
                   variant="outline"
                   className="text-base px-7 bg-white text-gray-900 hover:bg-gray-100"
                 >
-                  <a href="tel:+14165550100">
+                  <a href="tel:+9054949333">
                     <Phone className="h-4 w-4 mr-2" />
                     Call Us
                   </a>

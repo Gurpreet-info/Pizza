@@ -35,6 +35,7 @@ import {
 } from './AdminFormSheet';
 import * as htmlToImage from "html-to-image";
 import { Share2 } from "lucide-react";
+import { useWakeLock } from '../hooks/useWakeLock';
 
 /** Matches checkout: `CheckoutPage` uses 13% HST on (subtotal − discounts + delivery). */
 const RECEIPT_HST_PERCENT = 13;
@@ -1301,6 +1302,8 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
     from_date: dateFilter === 'custom' ? (fromDate || undefined) : undefined,
     to_date: dateFilter === 'custom' ? (toDate || undefined) : undefined,
   });
+
+  useWakeLock();
 
   const refreshWithCurrentFilters = async () => {
     const list = await fetchAdminOrders(buildFilters());

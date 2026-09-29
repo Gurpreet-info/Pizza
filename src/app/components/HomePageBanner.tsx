@@ -46,7 +46,7 @@ export function HomePageBanner({ title, subtitle, pageKey, backgroundImage }: Ho
                   size="lg"
                   className="bg-orange-600 hover:bg-orange-700 text-base px-7"
                 >
-                  <a href="tel:+14165550100">
+                  <a href="tel:+9054949333">
                     <Phone className="h-4 w-4 " />
                     Call Us
                   </a>

@@ -18,6 +18,8 @@ const UserDashboardPage = lazy(() =>
   import('./pages/UserDashboardPage').then((m) => ({ default: m.UserDashboardPage }))
 );
 const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const AboutUs = lazy(() => import('./pages/AboutUs'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 
 export const router = createBrowserRouter([
@@ -35,6 +37,8 @@ export const router = createBrowserRouter([
       { path: 'locations', Component: LocationsPage },
       { path: 'popularpizza-coupons', Component: CouponsPage },
       { path: 'popularpizza-offers', Component: OffersPage },
+      { path: 'privacy-policy', Component: PrivacyPolicy },
+      { path: 'about-us', Component: AboutUs },
       { path: 'login', Component: LoginPage },
       { path: 'dashboard', Component: UserDashboardPage },
       { path: 'admin', Component: AdminPage },

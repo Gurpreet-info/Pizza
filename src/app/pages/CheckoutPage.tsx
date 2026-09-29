@@ -54,6 +54,7 @@ export function CheckoutPage() {
   const [customerPhone, setCustomerPhone] = useState(user?.phone || '');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [deliveryPostalCode, setDeliveryPostalCode] = useState('');
+  const [showPostalSuggestions, setShowPostalSuggestions] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -83,10 +84,33 @@ export function CheckoutPage() {
     () => new Set(activeDeliveryPostalCodes.map((z) => normalizePostalCode(z.code))),
     [activeDeliveryPostalCodes]
   );
+  const postalSuggestions = useMemo(() => {
+    const search = normalizePostalCode(deliveryPostalCode);
+
+    if (search.length < 2) {
+      return [];
+    }
+
+    return activeDeliveryPostalCodes
+      .filter((z) => {
+        const code = normalizePostalCode(z.code);
+        return code.startsWith(search);
+      })
+      .slice(0, 10);
+  }, [deliveryPostalCode, activeDeliveryPostalCodes]);
+
   const normalizedPostalInput = normalizePostalCode(deliveryPostalCode);
+  const isCompletePostalCode = /^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(
+    normalizedPostalInput
+  );
+
   const deliveryPostalAccepted =
-    !hasDeliveryZones ||
-    (normalizedPostalInput.length > 0 && allowedPostalNormalized.has(normalizedPostalInput));
+  !hasDeliveryZones ||
+  (isCompletePostalCode && allowedPostalNormalized.has(normalizedPostalInput));
+
+  // const deliveryPostalAccepted =
+  //   !hasDeliveryZones ||
+  //   (normalizedPostalInput.length > 0 && allowedPostalNormalized.has(normalizedPostalInput));
 
   useEffect(() => {
     if (!hasDeliveryZones && orderType === 'delivery') {
@@ -303,20 +327,91 @@ export function CheckoutPage() {
                   <div className="mt-4 space-y-4">
                     <div>
                       <Label htmlFor="postal">Postal code *</Label>
-                      <Input
+                      {/* <Input
                         id="postal"
-                        placeholder="e.g. M5V 3A8"
+                        placeholder="e.g. M5V3A8"
                         value={deliveryPostalCode}
                         onChange={(e) => setDeliveryPostalCode(e.target.value)}
                         className="mt-2"
                         autoComplete="postal-code"
                         required
-                      />
-                      {normalizedPostalInput.length > 0 && !deliveryPostalAccepted ? (
+                      /> */}
+
+                      <div className="relative">
+                        <Input
+                          id="postal"
+                          placeholder="e.g. M5V3A8"
+                          value={deliveryPostalCode}
+                          onChange={(e) => {
+                            const value = e.target.value.toUpperCase();
+
+                            setDeliveryPostalCode(value);
+                            setShowPostalSuggestions(true);
+                          }}
+                          onFocus={() => {
+                            if (normalizePostalCode(deliveryPostalCode).length >= 2) {
+                              setShowPostalSuggestions(true);
+                            }
+                          }}
+                          onBlur={() => {
+                            // Small delay so clicking a suggestion works
+                            setTimeout(() => {
+                              setShowPostalSuggestions(false);
+                            }, 150);
+                          }}
+                          className="mt-2"
+                          autoComplete="postal-code"
+                          required
+                        />
+
+                        {showPostalSuggestions && postalSuggestions.length > 0 && (
+                          <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg">
+                            {postalSuggestions.map((postal) => (
+                              <button
+                                key={postal.id}
+                                type="button"
+                                className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+
+                                  setDeliveryPostalCode(postal.code);
+                                  setShowPostalSuggestions(false);
+                                }}
+                              >
+                                {postal.code}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* {normalizedPostalInput.length > 0 && !deliveryPostalAccepted ? (
                         <p className="mt-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
                           No delivery available in your area
                         </p>
-                      ) : null}
+                      ) : null} */}
+                      {/* {normalizedPostalInput.length >= 6 && (
+                        deliveryPostalAccepted ? (
+                          <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                            ✓ Delivery is available in your area
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                            ✕ No delivery available in your area
+                          </p>
+                        )
+                      )} */}
+
+                      {isCompletePostalCode && (
+                        deliveryPostalAccepted ? (
+                          <p className="mt-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                            ✓ Delivery is available in your area
+                          </p>
+                        ) : (
+                          <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            ✕ No delivery available in your area
+                          </p>
+                        )
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="address">Street address *</Label>
