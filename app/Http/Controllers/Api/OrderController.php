@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\DeliveryPostalCode;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Support\CouponPhoneUse;
 use App\Support\PhoneNumber;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,8 +16,6 @@ use Illuminate\Validation\Rule;
 
 class OrderController extends Controller
 {
-    private const ADMIN_ORDER_DEFAULT_LOOKBACK_DAYS = 3;
-
     private const ORDER_WITH = [
         'location',
         'items.menuItem',
@@ -29,7 +29,7 @@ class OrderController extends Controller
             'phone' => ['sometimes', 'nullable', 'string', 'max:30'],
             'email' => ['sometimes', 'nullable', 'string', 'max:255'],
             'coupon_code' => ['sometimes', 'nullable', 'string', 'max:100'],
-            'date_filter' => ['sometimes', 'nullable', Rule::in(['last_week', 'last_month', 'custom'])],
+            'date_filter' => ['sometimes', 'nullable', Rule::in(['yesterday', 'last_week', 'last_month', 'this_week', 'this_month', 'custom'])],
             'from_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'to_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
         ]);
@@ -41,12 +41,25 @@ class OrderController extends Controller
         $dateFilter = $request->query('date_filter');
         $dateFilter = is_string($dateFilter) ? trim($dateFilter) : '';
 
+        $phone = $request->query('phone');
+        $phone = is_string($phone) ? trim($phone) : '';
+        $normalizedPhone = $phone !== '' ? PhoneNumber::normalize($phone) : '';
+
+        $email = $request->query('email');
+        $email = is_string($email) ? trim($email) : '';
+
+        $coupon = $request->query('coupon_code');
+        $coupon = is_string($coupon) ? trim($coupon) : '';
+
+        $hasCustomerSearch = $normalizedPhone !== '' || $email !== '' || $coupon !== '';
+
         if ($dateFilter === '') {
-            $query->where('created_at', '>=', now()->subDays(self::ADMIN_ORDER_DEFAULT_LOOKBACK_DAYS));
-        } elseif ($dateFilter === 'last_week') {
-            $query->where('created_at', '>=', now()->subDays(7));
-        } elseif ($dateFilter === 'last_month') {
-            $query->where('created_at', '>=', now()->subDays(30));
+            // Phone, email, or coupon alone should return every matching order.
+            // With no search and no date, show today only.
+            if (! $hasCustomerSearch) {
+                [$start, $end] = $this->orderListDateBounds('');
+                $query->whereBetween('created_at', [$start, $end]);
+            }
         } elseif ($dateFilter === 'custom') {
             $fromDate = $request->query('from_date');
             $toDate = $request->query('to_date');
@@ -67,32 +80,219 @@ class OrderController extends Controller
                 $fromDate.' 00:00:00',
                 $toDate.' 23:59:59',
             ]);
+        } else {
+            [$start, $end] = $this->orderListDateBounds($dateFilter);
+            $query->whereBetween('created_at', [$start, $end]);
         }
 
-        $phone = $request->query('phone');
-        if (is_string($phone) && trim($phone) !== '') {
-            $normalized = PhoneNumber::normalize($phone);
-            if ($normalized !== '') {
-                $query->whereRaw(
-                    "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(customer_phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '') LIKE ?",
-                    ['%'.$normalized.'%']
-                );
-            }
+        if ($normalizedPhone !== '') {
+            $query->whereRaw(
+                "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(customer_phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '') LIKE ?",
+                ['%'.$normalizedPhone.'%']
+            );
         }
 
-        $email = $request->query('email');
-        if (is_string($email) && trim($email) !== '') {
-            $like = '%'.addcslashes(trim($email), '%_\\').'%';
+        if ($email !== '') {
+            $like = '%'.addcslashes($email, '%_\\').'%';
             $query->where('customer_email', 'like', $like);
         }
 
-        $coupon = $request->query('coupon_code');
-        if (is_string($coupon) && trim($coupon) !== '') {
-            $like = '%'.addcslashes(trim($coupon), '%_\\').'%';
+        if ($coupon !== '') {
+            $like = '%'.addcslashes($coupon, '%_\\').'%';
             $query->where('coupon_code', 'like', $like);
         }
 
-        return response()->json($query->get());
+        $orders = $query->get();
+        $phonesOnPage = $orders
+            ->map(fn (Order $order) => PhoneNumber::normalize($order->customer_phone))
+            ->filter(fn (string $phone) => $phone !== '')
+            ->unique()
+            ->values()
+            ->all();
+        $completedByPhone = $this->completedOrdersForPhones($phonesOnPage);
+        $notesByPhone = $this->adminNotesForPhones($phonesOnPage);
+
+        $payload = $orders->map(function (Order $order) use ($completedByPhone, $notesByPhone) {
+            $data = $order->toArray();
+            $data['past_completed_orders'] = $this->pastCompletedOrdersFor($order, $completedByPhone);
+            $data['prior_admin_notes'] = $this->priorAdminNotesFor($order, $notesByPhone);
+
+            return $data;
+        });
+
+        return response()->json($payload);
+    }
+
+    /**
+     * Calendar window for the admin order list.
+     * Last week and last month are the previous period, not the current one.
+     * Weeks run Monday through Sunday.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function orderListDateBounds(string $dateFilter): array
+    {
+        $now = now();
+
+        return match ($dateFilter) {
+            'yesterday' => [
+                $now->copy()->subDay()->startOfDay(),
+                $now->copy()->subDay()->endOfDay(),
+            ],
+            'this_week' => [
+                $now->copy()->startOfWeek(Carbon::MONDAY)->startOfDay(),
+                $now->copy()->endOfWeek(Carbon::SUNDAY)->endOfDay(),
+            ],
+            'last_week' => [
+                $now->copy()->subWeek()->startOfWeek(Carbon::MONDAY)->startOfDay(),
+                $now->copy()->subWeek()->endOfWeek(Carbon::SUNDAY)->endOfDay(),
+            ],
+            'this_month' => [
+                $now->copy()->startOfMonth()->startOfDay(),
+                $now->copy()->endOfMonth()->endOfDay(),
+            ],
+            'last_month' => [
+                $now->copy()->subMonthNoOverflow()->startOfMonth()->startOfDay(),
+                $now->copy()->subMonthNoOverflow()->endOfMonth()->endOfDay(),
+            ],
+            default => [
+                $now->copy()->startOfDay(),
+                $now->copy()->endOfDay(),
+            ],
+        };
+    }
+
+    /**
+     * Completed orders for the phones already on this result list.
+     *
+     * @param  list<string>  $normalizedPhones
+     * @return array<string, list<Order>>
+     */
+    private function completedOrdersForPhones(array $normalizedPhones): array
+    {
+        $phones = array_values(array_unique(array_filter(
+            $normalizedPhones,
+            fn ($phone) => is_string($phone) && $phone !== ''
+        )));
+
+        if ($phones === []) {
+            return [];
+        }
+
+        $phoneKey = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(customer_phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')";
+        $placeholders = implode(',', array_fill(0, count($phones), '?'));
+
+        $grouped = [];
+        Order::query()
+            ->where('status', 'completed')
+            ->whereNotNull('customer_phone')
+            ->whereRaw("{$phoneKey} IN ({$placeholders})", $phones)
+            ->get(['id', 'customer_phone', 'created_at'])
+            ->each(function (Order $row) use (&$grouped) {
+                $key = PhoneNumber::normalize($row->customer_phone);
+                if ($key === '') {
+                    return;
+                }
+                $grouped[$key][] = $row;
+            });
+
+        return $grouped;
+    }
+
+    /**
+     * Completed orders for this phone that were placed before this order.
+     *
+     * @param  array<string, list<Order>>  $completedByPhone
+     */
+    private function pastCompletedOrdersFor(Order $order, array $completedByPhone): int
+    {
+        $key = PhoneNumber::normalize($order->customer_phone);
+        if ($key === '' || $order->created_at === null) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($completedByPhone[$key] ?? [] as $earlier) {
+            if ($earlier->id === $order->id || $earlier->created_at === null) {
+                continue;
+            }
+            if ($earlier->created_at->lt($order->created_at) || ($earlier->created_at->equalTo($order->created_at) && $earlier->id < $order->id)) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Orders that already have a staff note, for the phones on this list.
+     *
+     * @param  list<string>  $normalizedPhones
+     * @return array<string, list<Order>>
+     */
+    private function adminNotesForPhones(array $normalizedPhones): array
+    {
+        $phones = array_values(array_unique(array_filter(
+            $normalizedPhones,
+            fn ($phone) => is_string($phone) && $phone !== ''
+        )));
+
+        if ($phones === []) {
+            return [];
+        }
+
+        $phoneKey = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(customer_phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')";
+        $placeholders = implode(',', array_fill(0, count($phones), '?'));
+
+        $grouped = [];
+        Order::query()
+            ->whereNotNull('admin_note')
+            ->where('admin_note', '!=', '')
+            ->whereNotNull('customer_phone')
+            ->whereRaw("{$phoneKey} IN ({$placeholders})", $phones)
+            ->get(['id', 'customer_phone', 'admin_note', 'created_at'])
+            ->each(function (Order $row) use (&$grouped) {
+                $key = PhoneNumber::normalize($row->customer_phone);
+                if ($key === '') {
+                    return;
+                }
+                $grouped[$key][] = $row;
+            });
+
+        return $grouped;
+    }
+
+    /**
+     * Staff notes from earlier orders with this phone.
+     *
+     * @param  array<string, list<Order>>  $notesByPhone
+     * @return list<array{order_id: int, note: string}>
+     */
+    private function priorAdminNotesFor(Order $order, array $notesByPhone): array
+    {
+        $key = PhoneNumber::normalize($order->customer_phone);
+        if ($key === '' || $order->created_at === null) {
+            return [];
+        }
+
+        $notes = [];
+        foreach ($notesByPhone[$key] ?? [] as $earlier) {
+            $note = trim((string) $earlier->admin_note);
+            if ($note === '' || $earlier->id === $order->id || $earlier->created_at === null) {
+                continue;
+            }
+            $isEarlier = $earlier->created_at->lt($order->created_at)
+                || ($earlier->created_at->equalTo($order->created_at) && $earlier->id < $order->id);
+            if (! $isEarlier) {
+                continue;
+            }
+            $notes[] = [
+                'order_id' => $earlier->id,
+                'note' => $note,
+            ];
+        }
+
+        return $notes;
     }
 
     public function dashboardStats(Request $request): JsonResponse
@@ -188,13 +388,19 @@ class OrderController extends Controller
 
     public function myOrders(Request $request): JsonResponse
     {
-        return response()->json(
-            Order::query()
-                ->with(self::ORDER_WITH)
-                ->where('user_id', $request->user()->id)
-                ->latest()
-                ->get()
-        );
+        $orders = Order::query()
+            ->with(self::ORDER_WITH)
+            ->where('user_id', $request->user()->id)
+            ->latest()
+            ->get()
+            ->map(function (Order $order) {
+                $data = $order->toArray();
+                unset($data['admin_note']);
+
+                return $data;
+            });
+
+        return response()->json($orders);
     }
 
     public function store(Request $request): JsonResponse
@@ -279,6 +485,13 @@ class OrderController extends Controller
             $data['delivery_postal_code'] = null;
         }
 
+        $couponCode = isset($data['coupon_code']) ? trim((string) $data['coupon_code']) : '';
+        if ($couponCode !== '' && CouponPhoneUse::alreadyUsed($couponCode, $data['customer_phone'])) {
+            return response()->json([
+                'message' => 'This phone number has already used this coupon.',
+            ], 422);
+        }
+
         $items = $data['items'] ?? [];
         unset($data['items']);
 
@@ -325,6 +538,18 @@ class OrderController extends Controller
         ]);
 
         $order->update(['status' => $data['status']]);
+
+        return response()->json($order->fresh()->load(self::ORDER_WITH));
+    }
+
+    public function updateNote(Request $request, Order $order): JsonResponse
+    {
+        $data = $request->validate([
+            'admin_note' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $note = trim((string) ($data['admin_note'] ?? ''));
+        $order->update(['admin_note' => $note === '' ? null : $note]);
 
         return response()->json($order->fresh()->load(self::ORDER_WITH));
     }

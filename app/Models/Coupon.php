@@ -8,12 +8,17 @@ class Coupon extends Model
 {
     protected $fillable = [
         'code', 'description', 'discount_type', 'discount_value', 'min_order_amount',
-        'max_discount', 'valid_from', 'valid_until', 'usage_limit', 'usage_count', 'active',
+        'max_discount',         'valid_from', 'valid_until', 'usage_limit', 'usage_count', 'active', 'popup_pages',
     ];
 
     protected function casts(): array
     {
-        return ['valid_from' => 'datetime', 'valid_until' => 'datetime', 'active' => 'boolean'];
+        return [
+            'valid_from' => 'datetime',
+            'valid_until' => 'datetime',
+            'active' => 'boolean',
+            'popup_pages' => 'array',
+        ];
     }
 }
 

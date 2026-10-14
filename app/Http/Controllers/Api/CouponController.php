@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\Coupon;
+use App\Support\CouponPhoneUse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class CouponController extends BaseCrudController
 {
@@ -26,14 +29,24 @@ class CouponController extends BaseCrudController
             'usage_limit' => ['nullable', 'integer', 'min:1'],
             'usage_count' => ['nullable', 'integer', 'min:0'],
             'active' => ['nullable', 'boolean'],
+            'popup_pages' => ['nullable', 'array'],
+            'popup_pages.*' => ['string', Rule::in(['home', 'menu', 'cart', 'checkout', 'offers', 'coupons', 'locations', 'about', 'privacy'])],
         ];
     }
 
-    public function validateCode(string $code): JsonResponse
+    public function validateCode(Request $request, string $code): JsonResponse
     {
         $coupon = Coupon::query()->whereRaw('UPPER(code) = ?', [strtoupper($code)])->first();
         if (! $coupon) {
             return response()->json(['valid' => false, 'message' => 'Invalid coupon code']);
+        }
+
+        $phone = $request->query('phone');
+        if (is_string($phone) && trim($phone) !== '' && CouponPhoneUse::alreadyUsed($code, $phone)) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'This phone number has already used this coupon.',
+            ]);
         }
 
         return response()->json(['valid' => true, 'coupon' => $coupon]);

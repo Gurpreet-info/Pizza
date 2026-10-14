@@ -8,7 +8,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MenuItem extends Model
 {
-    protected $fillable = ['name', 'description', 'base_price', 'image', 'available'];
+    protected $fillable = ['name', 'description', 'base_price', 'image', 'available', 'show_on_featured_slider', 'featured_slider_rank'];
+
+    protected $casts = [
+        'available' => 'boolean',
+        'show_on_featured_slider' => 'boolean',
+        'featured_slider_rank' => 'integer',
+    ];
 
     public function categories(): BelongsToMany
     {

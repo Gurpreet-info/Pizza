@@ -146,6 +146,8 @@ class MenuItemController extends BaseCrudController
             'base_price' => [$isUpdate ? 'sometimes' : 'required', 'numeric', 'min:0'],
             'image' => ['nullable', 'string', 'max:500'],
             'available' => ['nullable', 'boolean'],
+            'show_on_featured_slider' => ['nullable', 'boolean'],
+            'featured_slider_rank' => ['nullable', 'integer', 'min:1'],
         ];
     }
 
