@@ -9,7 +9,7 @@ import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { Receipt } from 'lucide-react';
@@ -21,6 +21,93 @@ const RECEIPT_HST_PERCENT = 13;
 
 const formatStatusLabel = (status: string) =>
   status.length ? status.charAt(0).toUpperCase() + status.slice(1) : status;
+
+const ORDER_PROGRESS_STEPS: Array<{
+  key: Order['status'];
+  label: string;
+  hint: string;
+  dot: string;
+  text: string;
+}> = [
+  { key: 'pending', label: 'Pending', hint: 'Order received', dot: 'bg-yellow-500', text: 'text-yellow-800' },
+  { key: 'confirmed', label: 'Confirmed', hint: 'Restaurant accepted', dot: 'bg-blue-600', text: 'text-blue-800' },
+  { key: 'preparing', label: 'Preparing', hint: 'In the kitchen', dot: 'bg-purple-600', text: 'text-purple-800' },
+  { key: 'ready', label: 'Ready', hint: 'Ready for pickup or delivery', dot: 'bg-green-600', text: 'text-green-800' },
+  { key: 'completed', label: 'Completed', hint: 'Order finished', dot: 'bg-gray-500', text: 'text-gray-700' },
+];
+
+function OrderStatusSteps({ status }: { status: Order['status'] }) {
+  if (status === 'cancelled') {
+    return (
+      <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+        Cancelled
+      </div>
+    );
+  }
+
+  const currentIndex = Math.max(
+    0,
+    ORDER_PROGRESS_STEPS.findIndex((step) => step.key === status)
+  );
+
+  const markerClass = (state: 'done' | 'current' | 'upcoming', text: string, dot: string) =>
+    state === 'upcoming'
+      ? `flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-current bg-white text-xs font-bold ${text}`
+      : `flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${dot} ${
+          state === 'current' ? 'ring-4 ring-black/10' : ''
+        }`;
+
+  return (
+    <>
+      <ol className="mb-4 md:hidden" aria-label="Order progress">
+        {ORDER_PROGRESS_STEPS.map((step, index) => {
+          const state = index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'upcoming';
+          const isLast = index === ORDER_PROGRESS_STEPS.length - 1;
+          return (
+            <li key={step.key} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <span className={markerClass(state, step.text, step.dot)}>
+                  {state === 'done' ? <Check className="h-4 w-4" aria-hidden /> : index + 1}
+                </span>
+                {isLast ? null : <span className="min-h-4 w-0.5 flex-1 bg-gray-200" />}
+              </div>
+              <div className={`pb-3 ${state === 'upcoming' ? 'opacity-60' : ''}`}>
+                <div className={`text-sm font-semibold ${state === 'upcoming' ? 'text-gray-500' : step.text}`}>
+                  {step.label}
+                </div>
+                <div className="text-xs text-gray-500">{step.hint}</div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <ol className="mb-4 hidden items-start md:flex" aria-label="Order progress">
+        {ORDER_PROGRESS_STEPS.map((step, index) => {
+          const state = index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'upcoming';
+          const isFirst = index === 0;
+          const isLast = index === ORDER_PROGRESS_STEPS.length - 1;
+          return (
+            <li key={step.key} className="flex min-w-0 flex-1 flex-col items-center text-center">
+              <div className="flex w-full items-center">
+                <span className={`h-0.5 flex-1 ${isFirst ? 'bg-transparent' : 'bg-gray-200'}`} />
+                <span className={markerClass(state, step.text, step.dot)}>
+                  {state === 'done' ? <Check className="h-4 w-4" aria-hidden /> : index + 1}
+                </span>
+                <span className={`h-0.5 flex-1 ${isLast ? 'bg-transparent' : 'bg-gray-200'}`} />
+              </div>
+              <div className={`mt-2 px-1 ${state === 'upcoming' ? 'opacity-60' : ''}`}>
+                <div className={`text-sm font-semibold ${state === 'upcoming' ? 'text-gray-500' : step.text}`}>
+                  {step.label}
+                </div>
+                <div className="text-xs text-gray-500">{step.hint}</div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </>
+  );
+}
 
 const fmt = (n: number) => `$${n.toFixed(2)}`;
 
@@ -296,13 +383,12 @@ export function UserDashboardPage() {
     ensureUserDashboardLoaded,
     refreshUserOrdersQuiet,
     checkoutRevealPassword,
-    locations
+    locations,
+    addOrderLinesToCart,
   } = useApp();
   const [showCheckoutPassword, setShowCheckoutPassword] = useState(false);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
   const prevStatusesRef = useRef<Record<string, string>>({});
-  const [statusBanners, setStatusBanners] = useState<
-    Record<string, { from: string; to: string }>
-  >({});
   const refreshQuietRef = useRef(refreshUserOrdersQuiet);
   refreshQuietRef.current = refreshUserOrdersQuiet;
 
@@ -328,7 +414,6 @@ export function UserDashboardPage() {
   useEffect(() => {
     if (!user?.id) return;
     prevStatusesRef.current = {};
-    setStatusBanners({});
   }, [user?.id]);
 
   const userOrders = useMemo(() => {
@@ -346,12 +431,10 @@ export function UserDashboardPage() {
     if (!user || user.isAdmin) return;
     const prev = prevStatusesRef.current;
     const nextSnapshot: Record<string, string> = { ...prev };
-    const newBanners: Record<string, { from: string; to: string }> = {};
 
     for (const o of userOrders) {
       const oldStatus = prev[o.id];
       if (oldStatus !== undefined && oldStatus !== o.status) {
-        newBanners[o.id] = { from: oldStatus, to: o.status };
         toast.info(`Order #${o.id} is now ${formatStatusLabel(o.status)}`, {
           description: `Previously: ${formatStatusLabel(oldStatus)}`,
         });
@@ -360,11 +443,32 @@ export function UserDashboardPage() {
     }
 
     prevStatusesRef.current = nextSnapshot;
-
-    if (Object.keys(newBanners).length > 0) {
-      setStatusBanners((b) => ({ ...b, ...newBanners }));
-    }
   }, [user?.id, user?.isAdmin, userOrders]);
+
+  const handleReorder = async (order: Order) => {
+    if (reorderingId) return;
+    if (order.items.length === 0) {
+      toast.error('This order has no items to reorder');
+      return;
+    }
+    setReorderingId(order.id);
+    try {
+      const { added, skipped } = await addOrderLinesToCart(order.items);
+      if (added === 0) {
+        toast.error('Those items are no longer available');
+        return;
+      }
+      if (skipped.length > 0) {
+        toast.info(`${skipped.join(', ')} ${skipped.length === 1 ? 'is' : 'are'} no longer available`);
+      }
+      toast.success('Order added to your cart');
+      navigate('/cart');
+    } catch {
+      toast.error('Could not reorder this order');
+    } finally {
+      setReorderingId(null);
+    }
+  };
 
   if (!user) {
     return null;
@@ -569,36 +673,22 @@ export function UserDashboardPage() {
             <div className="space-y-6">
               {userOrders.map((order) => (
                 <div key={order.id}>
-                  {statusBanners[order.id] ? (
-                    <div
-                      className="mb-3 flex flex-col gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950 sm:flex-row sm:items-center sm:justify-between"
-                      role="status"
-                    >
-                      <span>
-                        <span className="font-semibold">Order update: </span>
-                        {formatStatusLabel(statusBanners[order.id].from)} →{' '}
-                        {formatStatusLabel(statusBanners[order.id].to)}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 shrink-0 text-sky-900 hover:bg-sky-100"
-                        onClick={() =>
-                          setStatusBanners((b) => {
-                            const next = { ...b };
-                            delete next[order.id];
-                            return next;
-                          })
-                        }
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
-                  ) : null}
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                     <div>
-                      <p className="font-semibold">Order #{order.id}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">Order #{order.id}</p>
+                        {order.items.length > 0 ? (
+                          <Button
+                            type="button"
+                            size="lg"
+                            className="bg-orange-600 hover:bg-orange-700"
+                            disabled={reorderingId !== null}
+                            onClick={() => void handleReorder(order)}
+                          >
+                            {reorderingId === order.id ? 'Adding…' : 'Reorder'}
+                          </Button>
+                        ) : null}
+                      </div>
                       <p className="text-sm text-gray-600">
                         {new Date(order.createdAt).toLocaleString('en-CA', {
                           dateStyle: 'medium',
@@ -630,6 +720,8 @@ export function UserDashboardPage() {
                       </span>
                     </div>
                   </div>
+
+                  <OrderStatusSteps status={order.status} />
 
                   {order.items.length > 0 ? (
                     <ul className="mb-4 space-y-3">

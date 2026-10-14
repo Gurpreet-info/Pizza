@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { usePageMeta } from "../hooks/usePageMeta";
 
 type PolicySectionProps = {
   id: string;
@@ -66,14 +67,14 @@ const customerData = [
 
 function PolicySection({ id, number, title, children }: PolicySectionProps) {
   return (
-    <section id={id} className="scroll-mt-24 border-b border-zinc-200 py-10 first:pt-0 last:border-0">
+    <section id={id} className="scroll-mt-24 border-b border-gray-200 py-10 first:pt-0 last:border-0">
       <div className="flex items-start gap-4">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-sm font-black text-red-700">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-sm font-black text-orange-700">
           {number}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-2xl font-black tracking-tight text-zinc-950">{title}</h2>
-          <div className="mt-5 space-y-5 text-[1.02rem] leading-8 text-zinc-700">{children}</div>
+          <h2 className="text-2xl font-black tracking-tight text-gray-900">{title}</h2>
+          <div className="mt-5 space-y-5 text-[1.02rem] leading-8 text-gray-700">{children}</div>
         </div>
       </div>
     </section>
@@ -85,7 +86,7 @@ function BulletList({ items }: { items: readonly string[] }) {
     <ul className="ml-1 space-y-2.5" role="list">
       {items.map((item) => (
         <li key={item} className="flex items-start gap-3">
-          <span aria-hidden="true" className="mt-3 size-1.5 shrink-0 rounded-full bg-red-600" />
+          <span aria-hidden="true" className="mt-3 size-1.5 shrink-0 rounded-full bg-orange-600" />
           <span>{item}</span>
         </li>
       ))}
@@ -94,39 +95,45 @@ function BulletList({ items }: { items: readonly string[] }) {
 }
 
 export default function PrivacyPolicy() {
+  usePageMeta(
+    "Privacy Policy",
+    "How Pizza Offers collects, uses, and protects personal information for visitors, customers, and restaurant partners.",
+    "privacy_policy"
+  );
+
   return (
     <>
       <a
         href="#policy-content"
-        className="sr-only z-50 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+        className="sr-only z-50 rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
       >
         Skip to privacy policy
       </a>
 
-      <main id="top" className="min-h-screen bg-zinc-50 text-zinc-950">
-        <header className="border-b border-zinc-200 bg-white">
+      <main id="top" className="min-h-screen bg-gray-50 text-gray-900">
+        <header className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8 lg:py-20">
           
             <div className="mt-10 max-w-4xl">
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-red-600">
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-orange-600">
                 Legal
               </p>
-              <h1 className="mt-4 text-4xl font-black tracking-tight text-zinc-950 sm:text-5xl">
+              <h1 className="mt-4 text-4xl font-black tracking-tight text-gray-900 sm:text-5xl">
                 Privacy Policy
               </h1>
-              <p className="mt-6 text-lg leading-8 text-zinc-600">
+              <p className="mt-6 text-lg leading-8 text-gray-600">
                 This policy explains how Pizza Offers collects, uses, discloses, and protects
                 personal information belonging to website visitors, customers, and participating
                 restaurant representatives.
               </p>
               <dl className="mt-8 flex flex-wrap gap-x-10 gap-y-4 text-sm">
                 <div>
-                  <dt className="font-semibold text-zinc-500">Effective date</dt>
-                  <dd className="mt-1 font-bold text-zinc-950">August 19, 2026</dd>
+                  <dt className="font-semibold text-gray-500">Effective date</dt>
+                  <dd className="mt-1 font-bold text-gray-900">August 19, 2026</dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-zinc-500">Last updated</dt>
-                  <dd className="mt-1 font-bold text-zinc-950">August 19, 2026</dd>
+                  <dt className="font-semibold text-gray-500">Last updated</dt>
+                  <dd className="mt-1 font-bold text-gray-900">August 19, 2026</dd>
                 </div>
               </dl>
             </div>
@@ -136,15 +143,15 @@ export default function PrivacyPolicy() {
         <div className="mx-auto grid max-w-7xl gap-12 px-6 py-14 lg:grid-cols-[15rem_minmax(0,1fr)] lg:px-8 lg:py-20">
           <aside className="hidden lg:block">
             <nav aria-label="Privacy policy sections" className="sticky top-8">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-500">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-500">
                 On this page
               </p>
-              <ol className="mt-5 space-y-1 border-l border-zinc-200">
+              <ol className="mt-5 space-y-1 border-l border-gray-200">
                 {policyNavigation.map(([id, label], index) => (
                   <li key={id}>
                     <a
                       href={`#${id}`}
-                      className="block border-l-2 border-transparent py-1.5 pl-4 text-sm leading-5 text-zinc-600 transition hover:border-red-600 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                      className="block border-l-2 border-transparent py-1.5 pl-4 text-sm leading-5 text-gray-600 transition hover:border-orange-600 hover:text-orange-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
                     >
                       {index + 1}. {label}
                     </a>
@@ -154,11 +161,11 @@ export default function PrivacyPolicy() {
             </nav>
           </aside>
 
-          <article id="policy-content" className="min-w-0 rounded-3xl border border-zinc-200 bg-white px-5 py-8 shadow-sm sm:px-9 lg:px-12 lg:py-12">
-            <div className="border-b border-zinc-200 pb-10 text-[1.02rem] leading-8 text-zinc-700">
+          <article id="policy-content" className="min-w-0 rounded-3xl border border-gray-200 bg-white px-5 py-8 shadow-sm sm:px-9 lg:px-12 lg:py-12">
+            <div className="border-b border-gray-200 pb-10 text-[1.02rem] leading-8 text-gray-700">
               <p>
                 Pizza Offers ("Pizza Offers," "we," "us," or "our") operates{" "}
-                <a className="font-semibold text-red-700 underline decoration-red-200 underline-offset-4 hover:decoration-red-600" href="https://pizzaoffers.ca/">
+                <a className="font-semibold text-orange-700 underline decoration-orange-200 underline-offset-4 hover:decoration-orange-600" href="https://pizzaoffers.ca/">
                   pizzaoffers.ca
                 </a>
                 , an online platform where independent pizza stores and restaurants can publish
@@ -166,7 +173,7 @@ export default function PrivacyPolicy() {
               </p>
               <p className="mt-5">
                 In this policy, a pizza store or restaurant available through the platform is
-                called a <strong className="font-bold text-zinc-950">Participating Restaurant</strong>.
+                called a <strong className="font-bold text-gray-900">Participating Restaurant</strong>.
               </p>
             </div>
 
@@ -189,9 +196,9 @@ export default function PrivacyPolicy() {
             <PolicySection id="customer-information" number={2} title="Information We Collect From Customers">
               <div className="grid gap-4 sm:grid-cols-2">
                 {customerData.map(([title, description]) => (
-                  <div key={title} className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5">
-                    <h3 className="font-bold text-zinc-950">{title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-zinc-600">{description}</p>
+                  <div key={title} className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                    <h3 className="font-bold text-gray-900">{title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-gray-600">{description}</p>
                   </div>
                 ))}
               </div>
@@ -361,7 +368,7 @@ export default function PrivacyPolicy() {
                 personalized Google advertising through{" "}
                 <a
                   href="https://myadcenter.google.com/"
-                  className="font-semibold text-red-700 underline decoration-red-200 underline-offset-4 hover:decoration-red-600"
+                  className="font-semibold text-orange-700 underline decoration-orange-200 underline-offset-4 hover:decoration-orange-600"
                 >
                   Google's Ad Settings
                 </a>
@@ -498,8 +505,8 @@ export default function PrivacyPolicy() {
 
             {/* <PolicySection id="contact" number={19} title="Contact the Pizza Offers Privacy Officer">
               <p>Questions, access requests, correction requests, or privacy complaints may be directed to:</p>
-              <address className="not-italic rounded-2xl border border-red-100 bg-red-50 p-5 text-zinc-800">
-                <p className="font-black text-zinc-950">Privacy Officer - Pizza Offers</p>
+              <address className="not-italic rounded-2xl border border-orange-100 bg-orange-50 p-5 text-gray-800">
+                <p className="font-black text-gray-900">Privacy Officer - Pizza Offers</p>
                 <p className="mt-2">
                   <span className="font-bold">Email:</span> {PRIVACY_EMAIL}
                 </p>
@@ -508,13 +515,13 @@ export default function PrivacyPolicy() {
                 </p>
                 <p>
                   <span className="font-bold">Website:</span>{" "}
-                  <a className="font-semibold text-red-700 underline underline-offset-4" href="https://pizzaoffers.ca/">
+                  <a className="font-semibold text-orange-700 underline underline-offset-4" href="https://pizzaoffers.ca/">
                     pizzaoffers.ca
                   </a>
                 </p>
               </address>
               <p>
-                Please include <strong className="font-bold text-zinc-950">Privacy Request</strong>{" "}
+                Please include <strong className="font-bold text-gray-900">Privacy Request</strong>{" "}
                 in the subject line and provide enough information for us to understand and respond
                 to your request.
               </p>
@@ -523,7 +530,7 @@ export default function PrivacyPolicy() {
                 with the{" "}
                 <a
                   href="https://www.priv.gc.ca/en/report-a-concern/"
-                  className="font-semibold text-red-700 underline decoration-red-200 underline-offset-4 hover:decoration-red-600"
+                  className="font-semibold text-orange-700 underline decoration-orange-200 underline-offset-4 hover:decoration-orange-600"
                 >
                   Office of the Privacy Commissioner of Canada
                 </a>
@@ -534,7 +541,7 @@ export default function PrivacyPolicy() {
             <div className="pt-8 text-right">
               <a
                 href="#top"
-                className="inline-flex items-center gap-2 text-sm font-bold text-red-700 hover:text-red-800 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red-600"
+                className="inline-flex items-center gap-2 text-sm font-bold text-orange-700 hover:text-orange-800 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-orange-600"
               >
                 Back to top <span aria-hidden="true">↑</span>
               </a>

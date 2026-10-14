@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Link } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -92,7 +93,12 @@ export function OffersPage() {
             {activeOffers.map((offer) => {
               const applicableItems = getDisplayItems(offer);
               return (
-                <Card key={offer.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                <Link
+                  key={offer.id}
+                  to={`/popularpizza-offers/${offer.id}`}
+                  className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                >
+                <Card className="h-full overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
                   {offer.image && (
                     <div className="w-full h-48 overflow-hidden bg-gray-100">
                       <img
@@ -155,6 +161,7 @@ export function OffersPage() {
                     </div>
                   </CardContent>
                 </Card>
+                </Link>
               );
             })}
           </div>

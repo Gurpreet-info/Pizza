@@ -99,13 +99,14 @@ export function MenuPage() {
 
   /** “All”: categories by display order; items within each category ascending (oldest id first). */
   const filteredItems = useMemo(() => {
+    const visibleItems = menuItems.filter((item) => item.available);
     if (selectedCategoryId !== 'all') {
       return sortMenuItemsAsc(
-        menuItems.filter((item) => itemCategoryIds(item).includes(selectedCategoryId))
+        visibleItems.filter((item) => itemCategoryIds(item).includes(selectedCategoryId))
       );
     }
     const categoryOrder = new Map(sortedCategories.map((c, i) => [c.id, i]));
-    const decorated = menuItems.map((item) => ({ item }));
+    const decorated = visibleItems.map((item) => ({ item }));
     decorated.sort((a, b) => {
       const oa = categoryOrder.has(primaryCategoryId(a.item, categoryOrder))
         ? categoryOrder.get(primaryCategoryId(a.item, categoryOrder))!

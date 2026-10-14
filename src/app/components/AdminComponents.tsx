@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -1255,19 +1255,20 @@ type OrdersManagerProps = {
   orders: Order[];
   locations: Location[];
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
+  updateOrderNote: (orderId: string, note: string) => Promise<void>;
   fetchAdminOrders: (filters?: {
     phone?: string;
     email?: string;
     coupon_code?: string;
-    date_filter?: 'last_week' | 'last_month' | 'custom';
+    date_filter?: 'yesterday' | 'last_week' | 'last_month' | 'this_week' | 'this_month' | 'custom';
     from_date?: string;
     to_date?: string;
   }) => Promise<Order[]>;
 };
 
-type AdminDateFilterValue = 'unset' | 'last_week' | 'last_month' | 'custom';
+type AdminDateFilterValue = 'unset' | 'yesterday' | 'last_month' | 'last_week' | 'this_month' | 'this_week' | 'custom';
 
-export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdminOrders }: OrdersManagerProps) {
+export function OrdersManager({ orders, locations, updateOrderStatus, updateOrderNote, fetchAdminOrders }: OrdersManagerProps) {
   const [dateFilter, setDateFilter] = useState<AdminDateFilterValue>('unset');
   /** Bumps on Clear so Radix Select remounts and shows the placeholder again. */
   const [dateFilterSelectKey, setDateFilterSelectKey] = useState(0);
@@ -1280,6 +1281,8 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
   const [displayOrders, setDisplayOrders] = useState<Order[] | null>(null);
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
 
   const getStatusColor = (status: string) => {
@@ -1306,6 +1309,15 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
   useWakeLock();
 
   const refreshWithCurrentFilters = async () => {
+    const filtersOn =
+      phone.trim() !== '' ||
+      email.trim() !== '' ||
+      couponCode.trim() !== '' ||
+      dateFilter !== 'unset';
+    if (!filtersOn) {
+      setDisplayOrders(null);
+      return;
+    }
     const list = await fetchAdminOrders(buildFilters());
     setDisplayOrders(list);
   };
@@ -1349,7 +1361,50 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
     void refreshWithCurrentFilters();
   };
 
-  const baseList = displayOrders ?? orders;
+  const handleSaveNote = async (orderId: string, fallback: string) => {
+    const note = (noteDrafts[orderId] ?? fallback).trim();
+    setSavingNoteId(orderId);
+    try {
+      await updateOrderNote(orderId, note);
+      setNoteDrafts((prev) => ({ ...prev, [orderId]: note }));
+      toast.success('Order note saved');
+      await refreshWithCurrentFilters();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save the order note');
+    } finally {
+      setSavingNoteId(null);
+    }
+  };
+
+  const hasSearchFilters =
+    phone.trim() !== '' ||
+    email.trim() !== '' ||
+    couponCode.trim() !== '' ||
+    dateFilter !== 'unset';
+
+  useEffect(() => {
+    if (!hasSearchFilters) {
+      setDisplayOrders(null);
+      return;
+    }
+    if (displayOrders === null) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await fetchAdminOrders(buildFilters());
+        if (!cancelled) setDisplayOrders(list);
+      } catch {
+        /* keep the current filtered list if a background refresh fails */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [orders]);
+
+  const baseList = hasSearchFilters && displayOrders ? displayOrders : orders;
   const sortedOrders = [...baseList].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
@@ -1506,7 +1561,7 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
 
       <CardHeader>
         <CardTitle>Order history</CardTitle>
-        <p className="text-sm text-gray-600 font-normal">With no date option selected, the list shows the last 3 days. Or choose last week, last month, or a custom range. Search by phone, email, or coupon code (combined with AND).</p>
+        <p className="text-sm text-gray-600 font-normal">With no date option selected, the list shows today only. Yesterday is the previous calendar day. Last week and last month are the previous week and month, not the current one. Custom date uses the from and to dates you enter. Phone, email, or coupon with no date shows every match. Search fields combine with AND.</p>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1546,14 +1601,17 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
             <Select
               key={dateFilterSelectKey}
               value={dateFilter === 'unset' ? undefined : dateFilter}
-              onValueChange={(value: 'last_week' | 'last_month' | 'custom') => setDateFilter(value)}
+              onValueChange={(value: Exclude<AdminDateFilterValue, 'unset'>) => setDateFilter(value)}
             >
               <SelectTrigger id="admin-order-date-filter" className="mt-1">
-                <SelectValue placeholder="Select option" />
+                <SelectValue placeholder="Today" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="last_week">Last week</SelectItem>
+                <SelectItem value="yesterday">Yesterday</SelectItem>
                 <SelectItem value="last_month">Last month</SelectItem>
+                <SelectItem value="last_week">Last week</SelectItem>
+                <SelectItem value="this_month">This month</SelectItem>
+                <SelectItem value="this_week">This week</SelectItem>
                 <SelectItem value="custom">Custom date</SelectItem>
               </SelectContent>
             </Select>
@@ -1601,6 +1659,7 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
                 <TableHead className="min-w-[100px]">Fulfillment</TableHead>
                 <TableHead className="min-w-[100px]">Items</TableHead>
                 <TableHead className="min-w-[100px]">Discounts/Total</TableHead>
+                <TableHead className="min-w-[180px]">Note</TableHead>
                 {/* <TableHead className="w-[120px]">Total</TableHead> */}
                 {/* <TableHead className="w-[220px]">Status</TableHead> */}
               </TableRow>
@@ -1612,9 +1671,19 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
                 return (
                   <TableRow key={order.id} className="align-top">
                     <TableCell className="py-2 text-xs">
-                      {/* <div className='py-1'>
-                        Status: <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
-                      </div> */}
+                      {(() => {
+                        const savedNote = order.adminNote?.trim() ?? '';
+                        const priorNotes = order.priorAdminNotes ?? [];
+                        const hasWarning = priorNotes.length > 0 || savedNote !== '';
+                        return hasWarning ? (
+                          <div className="mb-2 space-y-1 text-xs font-semibold text-red-600">
+                            {priorNotes.map((item) => (
+                              <div key={`${order.id}-${item.orderId}`}>Order #{item.orderId}: {item.note}</div>
+                            ))}
+                            {savedNote !== '' ? <div>{savedNote}</div> : null}
+                          </div>
+                        ) : null;
+                      })()}
                       <Select
                         value={order.status}
                         onValueChange={(value: Order['status']) => handleStatusChange(order.id, value)}
@@ -1661,7 +1730,10 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
                     <TableCell className="py-2 text-xs leading-4">
                       <div className="font-medium text-sm leading-5">{order.customerName}</div>
                       {/* <div className="text-gray-600">{order.customerEmail}</div> */}
-                      <div className="text-gray-600">{order.customerPhone}</div>                        
+                      <div className="text-gray-600">{order.customerPhone}</div>
+                      <div className="text-orange-600 text-sm">
+                        past orders: {order.pastCompletedOrders ?? 0}
+                      </div>                        
                       <div className="font-medium text-sm leading-5 pt-5">
                         <Badge
                           variant={order.orderType === 'pickup' ? 'default' : 'destructive'}
@@ -1762,6 +1834,29 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
                         </div>
                       </div>
                     </TableCell>
+                    <TableCell className="py-2 text-xs">
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={noteDrafts[order.id] ?? order.adminNote ?? ''}
+                          onChange={(e) =>
+                            setNoteDrafts((prev) => ({ ...prev, [order.id]: e.target.value }))
+                          }
+                          placeholder="Order note"
+                          className="h-8 border-gray-400 bg-gray-300 text-xs"
+                          maxLength={2000}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0 px-2 text-xs"
+                          disabled={savingNoteId === order.id}
+                          onClick={() => void handleSaveNote(order.id, order.adminNote ?? '')}
+                        >
+                          {savingNoteId === order.id ? 'Saving…' : 'Save'}
+                        </Button>
+                      </div>
+                    </TableCell>
                     {/* <TableCell className="py-2 text-sm font-bold text-orange-600">
                       
                     </TableCell> */}
@@ -1771,7 +1866,7 @@ export function OrdersManager({ orders, locations, updateOrderStatus, fetchAdmin
               })}
               {sortedOrders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-gray-500">
+                  <TableCell colSpan={5} className="py-8 text-center text-gray-500">
                     No orders match your criteria
                   </TableCell>
                 </TableRow>

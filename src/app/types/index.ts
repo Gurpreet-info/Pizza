@@ -9,6 +9,10 @@ export interface MenuItem {
   categoryId: string;
   image: string;
   available: boolean;
+  /** Whether this item appears in the home page featured pizza slider. */
+  showOnFeaturedSlider: boolean;
+  /** Rank on the featured slider. 1 shows as "#1 most liked". */
+  featuredSliderRank: number | null;
 }
 
 export interface Category {
@@ -91,6 +95,8 @@ export interface Coupon {
   usageLimit: number; // total times this coupon can be used
   usageCount: number; // times this coupon has been used
   active: boolean;
+  /** Customer pages where this coupon may open as a popup. Empty means never. */
+  popupPages: string[];
 }
 
 export type OfferKind = 'standard' | 'bogo_same' | 'bogo_any' | 'spend_get_free';
@@ -166,6 +172,12 @@ export interface Order {
   couponCode?: string;
   couponDiscount?: number;
   offerDiscount?: number; // total discount from offers
+  /** Other completed orders for the same phone. Current order is not included. */
+  pastCompletedOrders?: number;
+  /** Staff note saved on this order. Customers do not see it. */
+  adminNote?: string;
+  /** Notes from earlier orders with the same phone. */
+  priorAdminNotes?: { orderId: string; note: string }[];
 }
 
 export interface User {

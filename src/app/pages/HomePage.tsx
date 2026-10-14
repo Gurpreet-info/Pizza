@@ -12,6 +12,95 @@ import { usePageMeta } from '../hooks/usePageMeta';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { Clock, MapPin, Phone, ChevronLeft, ChevronRight, UtensilsCrossed } from 'lucide-react';
 
+const HOME_SLIDER_AUTO_MS = 3000;
+
+function sliderCardStep(el: HTMLElement): { step: number; count: number; index: number } {
+  const card = el.firstElementChild as HTMLElement | null;
+  const step = card?.offsetWidth ?? 0;
+  const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+  if (step <= 0 || maxScroll <= 1) {
+    return { step: el.clientWidth || 1, count: 1, index: 0 };
+  }
+  const count = Math.round(maxScroll / step) + 1;
+  const index = Math.min(count - 1, Math.round(el.scrollLeft / step));
+  return { step, count, index };
+}
+
+function usePagedSlider(itemCount: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(0);
+  const [pageCount, setPageCount] = useState(1);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const { count, index } = sliderCardStep(el);
+      setPageCount(count);
+      setPage(index);
+    };
+    measure();
+    el.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+    };
+  }, [itemCount]);
+
+  useEffect(() => {
+    if (pageCount <= 1) return;
+    const id = window.setInterval(() => {
+      const el = ref.current;
+      if (!el) return;
+      const { step, count, index } = sliderCardStep(el);
+      const next = (index + 1) % count;
+      const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+      el.scrollTo({ left: Math.min(next * step, maxScroll), behavior: 'smooth' });
+    }, HOME_SLIDER_AUTO_MS);
+    return () => window.clearInterval(id);
+  }, [pageCount, itemCount]);
+
+  const goTo = (index: number) => {
+    const el = ref.current;
+    if (!el) return;
+    const { step } = sliderCardStep(el);
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+    el.scrollTo({ left: Math.min(index * step, maxScroll), behavior: 'smooth' });
+  };
+
+  return { ref, page, pageCount, goTo };
+}
+
+function SliderDots({
+  page,
+  pageCount,
+  onSelect,
+  label,
+}: {
+  page: number;
+  pageCount: number;
+  onSelect: (index: number) => void;
+  label: string;
+}) {
+  if (pageCount <= 1) return null;
+  return (
+    <div className="mt-4 flex justify-center gap-2">
+      {Array.from({ length: pageCount }, (_, index) => (
+        <button
+          key={index}
+          type="button"
+          onClick={() => onSelect(index)}
+          aria-label={`${label} ${index + 1}`}
+          className={`h-2.5 rounded-full transition ${
+            index === page ? 'w-6 bg-orange-600' : 'w-2.5 bg-gray-300'
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function HomePage() {
   usePageMeta(
     'Home',
@@ -54,6 +143,20 @@ export function HomePage() {
       (offer) => offer.showOnSlider && isOfferActiveNow(offer)
     );
   }, [offers]);
+
+  /** Available menu items flagged for the home featured slider, lowest rank first. */
+  const featuredItems = useMemo(
+    () =>
+      menuItems
+        .filter((item) => item.showOnFeaturedSlider && item.available)
+        .sort((a, b) => {
+          const rankA = a.featuredSliderRank ?? Number.MAX_SAFE_INTEGER;
+          const rankB = b.featuredSliderRank ?? Number.MAX_SAFE_INTEGER;
+          if (rankA !== rankB) return rankA - rankB;
+          return a.name.localeCompare(b.name);
+        }),
+    [menuItems]
+  );
 
   useEffect(() => {
     if (sliderOffers.length <= 1) return;
@@ -99,13 +202,8 @@ export function HomePage() {
       );
   }, [menuItems, offers, getActiveOffers]);
 
-  const offerItemsScrollRef = useRef<HTMLDivElement>(null);
-
-  const scrollOfferItems = (direction: 1 | -1) => {
-    const el = offerItemsScrollRef.current;
-    if (!el) return;
-    el.scrollBy({ left: direction * el.clientWidth, behavior: 'smooth' });
-  };
+  const featuredSlider = usePagedSlider(featuredItems.length);
+  const offerItemsSlider = usePagedSlider(offerItems.length);
 
   /** Categories flagged to show on the home page, in display order. */
   const homeCategories = useMemo(
@@ -116,13 +214,7 @@ export function HomePage() {
     [categories]
   );
 
-  const categoriesScrollRef = useRef<HTMLDivElement>(null);
-
-  const scrollCategories = (direction: 1 | -1) => {
-    const el = categoriesScrollRef.current;
-    if (!el) return;
-    el.scrollBy({ left: direction * el.clientWidth, behavior: 'smooth' });
-  };
+  const categoriesSlider = usePagedSlider(homeCategories.length);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -222,6 +314,74 @@ export function HomePage() {
         </div>
       </section>
 
+      {/* Featured pizza slider — same card carousel as deals, directly under the hero */}
+      {featuredItems.length > 0 ? (
+        <section className="py-10 md:py-12 bg-white">
+          <div className="container mx-auto px-4">
+            <div className="mb-5 flex items-end justify-between gap-4">
+              <div>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Our Best Sellers</h2>
+              </div>
+            </div>
+
+            <div
+              ref={featuredSlider.ref}
+              className="-mx-2 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
+            >
+              {featuredItems.map((item, index) => (
+                <div
+                  key={item.id}
+                  className="w-1/2 shrink-0 snap-start px-2 sm:w-1/2 lg:w-1/4"
+                >
+                  <Link
+                    to={`/popularpizza-menu/item/${item.id}`}
+                    className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md"
+                  >
+                    <div className="relative h-32 w-full overflow-hidden bg-gray-50 sm:h-48">
+                      {item.image?.trim() ? (
+                        <ImageWithFallback
+                          src={item.image}
+                          alt={item.name}
+                          draggable={false}
+                          className="pointer-events-none h-full w-full select-none object-cover transition duration-300 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <UtensilsCrossed className="h-10 w-10 text-gray-300" aria-hidden />
+                        </div>
+                      )}
+                      {index < 3 ? (
+                        <span className="absolute left-2 top-2 rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-bold tracking-wide text-white shadow sm:left-3 sm:top-3 sm:px-3 sm:py-1 sm:text-xs">
+                          #{item.featuredSliderRank ?? index + 1} most liked
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-1 flex-col p-3 sm:p-4">
+                      <h3 className="truncate font-bold text-gray-900">{item.name}</h3>
+                      <div className="mt-2 flex items-center justify-between gap-1 sm:mt-4">
+                        <span className="text-base font-bold text-orange-600 tabular-nums sm:text-lg">
+                          ${item.basePrice.toFixed(2)}
+                        </span>
+                        <span className="inline-flex items-center rounded-lg border-2 border-emerald-600 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 transition group-hover:bg-emerald-50 sm:px-4 sm:py-1.5 sm:text-sm">
+                          Order
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                </div>
+              ))}
+            </div>
+            <SliderDots
+              page={featuredSlider.page}
+              pageCount={featuredSlider.pageCount}
+              onSelect={featuredSlider.goTo}
+              label="Featured pizzas, page"
+            />
+          </div>
+        </section>
+      ) : null}
+
       {/* Items On Offer Carousel */}
       {offerItems.length > 0 ? (
         <section className="py-10 md:py-12 bg-white">
@@ -233,34 +393,14 @@ export function HomePage() {
                   Grab these items while the offer lasts.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <Link to="/popularpizza-menu" className="shrink-0">
-                  <Button variant="outline" size="sm" className="md:size-default">View Menu</Button>
-                </Link>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => scrollOfferItems(-1)}
-                    className="rounded-full border border-gray-200 bg-white p-2 text-gray-700 shadow-sm transition hover:bg-gray-50 active:scale-95"
-                    aria-label="Previous items"
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => scrollOfferItems(1)}
-                    className="rounded-full border border-gray-200 bg-white p-2 text-gray-700 shadow-sm transition hover:bg-gray-50 active:scale-95"
-                    aria-label="Next items"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
+              <Link to="/popularpizza-menu" className="shrink-0">
+                <Button variant="outline" size="sm" className="md:size-default">View Menu</Button>
+              </Link>
             </div>
 
             <div
-              ref={offerItemsScrollRef}
-              className="-mx-2 flex touch-pan-x snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [&::-webkit-scrollbar]:hidden"
+              ref={offerItemsSlider.ref}
+              className="-mx-2 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [&::-webkit-scrollbar]:hidden"
               style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
             >
               {offerItems.map(({ item, display }) => (
@@ -312,6 +452,12 @@ export function HomePage() {
                 </div>
               ))}
             </div>
+            <SliderDots
+              page={offerItemsSlider.page}
+              pageCount={offerItemsSlider.pageCount}
+              onSelect={offerItemsSlider.goTo}
+              label="Offer items, page"
+            />
           </div>
         </section>
       ) : null}
@@ -320,33 +466,13 @@ export function HomePage() {
       {homeCategories.length > 0 ? (
         <section className="py-16 bg-gray-50">
           <div className="container mx-auto px-4">
-            <div className="mb-8 flex items-end justify-between gap-4">
+            <div className="mb-8">
               <h2 className="text-3xl md:text-4xl font-bold">Our Menu Categories</h2>
-              {homeCategories.length > 1 ? (
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => scrollCategories(-1)}
-                    className="rounded-full border border-gray-200 bg-white p-2 text-gray-700 shadow-sm transition hover:bg-gray-50 active:scale-95"
-                    aria-label="Previous categories"
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => scrollCategories(1)}
-                    className="rounded-full border border-gray-200 bg-white p-2 text-gray-700 shadow-sm transition hover:bg-gray-50 active:scale-95"
-                    aria-label="Next categories"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </button>
-                </div>
-              ) : null}
             </div>
 
             <div
-              ref={categoriesScrollRef}
-              className="-mx-2 flex touch-pan-x snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [&::-webkit-scrollbar]:hidden"
+              ref={categoriesSlider.ref}
+              className="-mx-2 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth pb-2 [&::-webkit-scrollbar]:hidden"
               style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
             >
               {homeCategories.map((category) => (
@@ -382,16 +508,25 @@ export function HomePage() {
                         )}
                         <h3 className="font-semibold text-lg">{category.name}</h3>
                         <p className="text-sm text-gray-600 mt-2 line-clamp-2">{category.description}</p>
+                        <span className="mt-4 inline-flex items-center rounded-lg border-2 border-emerald-600 bg-white px-4 py-1.5 text-sm font-semibold text-emerald-700">
+                          View
+                        </span>
                       </CardContent>
                     </Card>
                   </Link>
                 </div>
               ))}
             </div>
+            <SliderDots
+              page={categoriesSlider.page}
+              pageCount={categoriesSlider.pageCount}
+              onSelect={categoriesSlider.goTo}
+              label="Categories, page"
+            />
 
-            <div className="text-center mt-8">
+            <div className="text-center mt-8 ">
               <Link to="/popularpizza-menu">
-                <Button variant="outline" size="lg">View Full Menu</Button>
+                <Button variant="outline" size="lg" className='bg-orange-600 hover:bg-orange-700 text-white px-7'>View Full Menu</Button>
               </Link>
             </div>
           </div>

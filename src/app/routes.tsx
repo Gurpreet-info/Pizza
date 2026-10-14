@@ -13,6 +13,9 @@ const OrderConfirmationPage = lazy(() =>
 const LocationsPage = lazy(() => import('./pages/LocationsPage').then((m) => ({ default: m.LocationsPage })));
 const CouponsPage = lazy(() => import('./pages/CouponsPage').then((m) => ({ default: m.CouponsPage })));
 const OffersPage = lazy(() => import('./pages/OffersPage').then((m) => ({ default: m.OffersPage })));
+const OfferDetailPage = lazy(() =>
+  import('./pages/OfferDetailPage').then((m) => ({ default: m.OfferDetailPage }))
+);
 const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })));
 const UserDashboardPage = lazy(() =>
   import('./pages/UserDashboardPage').then((m) => ({ default: m.UserDashboardPage }))
@@ -37,6 +40,7 @@ export const router = createBrowserRouter([
       { path: 'locations', Component: LocationsPage },
       { path: 'popularpizza-coupons', Component: CouponsPage },
       { path: 'popularpizza-offers', Component: OffersPage },
+      { path: 'popularpizza-offers/:offerId', Component: OfferDetailPage },
       { path: 'privacy-policy', Component: PrivacyPolicy },
       { path: 'about-us', Component: AboutUs },
       { path: 'login', Component: LoginPage },

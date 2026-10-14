@@ -37,6 +37,7 @@ export function CheckoutPage() {
     clearCart,
     validateCoupon,
     applyCoupon,
+    apiRequest,
     applyOfferToCart,
     ensureCheckoutLoaded,
     checkoutEnsureAccount,
@@ -138,7 +139,17 @@ export function CheckoutPage() {
   const tax = taxableAmount * 0.13;
   const total = taxableAmount + tax;
 
-  const handleApplyCoupon = () => {
+  const couponBlockedForPhone = async (code: string, phone: string): Promise<string | null> => {
+    const result = (await apiRequest(
+      `/coupons/validate/${encodeURIComponent(code)}?phone=${encodeURIComponent(phone)}`
+    )) as { valid?: boolean; message?: string } | null;
+    if (result && result.valid === false) {
+      return result.message || 'This phone number has already used this coupon.';
+    }
+    return null;
+  };
+
+  const handleApplyCoupon = async () => {
     if (!couponCode.trim()) {
       toast.error('Please enter a coupon code');
       return;
@@ -151,26 +162,44 @@ export function CheckoutPage() {
       return;
     }
 
+    const phone = customerPhone.trim();
+    if (!phone) {
+      toast.error('Enter your phone number before applying a coupon');
+      return;
+    }
+
     const validation = validateCoupon(couponCode.trim(), subtotalPayable);
 
-    if (validation.valid && validation.coupon) {
-      let discount = 0;
-
-      if (validation.coupon.discountType === 'percentage') {
-        discount = (subtotalPayable * validation.coupon.discountValue) / 100;
-        if (validation.coupon.maxDiscount && discount > validation.coupon.maxDiscount) {
-          discount = validation.coupon.maxDiscount;
-        }
-      } else {
-        discount = validation.coupon.discountValue;
-      }
-
-      setAppliedCoupon(validation.coupon);
-      setCouponDiscount(discount);
-      toast.success(validation.message);
-    } else {
+    if (!(validation.valid && validation.coupon)) {
       toast.error(validation.message);
+      return;
     }
+
+    try {
+      const blocked = await couponBlockedForPhone(validation.coupon.code, phone);
+      if (blocked) {
+        toast.error(blocked);
+        return;
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Could not check this coupon');
+      return;
+    }
+
+    let discount = 0;
+
+    if (validation.coupon.discountType === 'percentage') {
+      discount = (subtotalPayable * validation.coupon.discountValue) / 100;
+      if (validation.coupon.maxDiscount && discount > validation.coupon.maxDiscount) {
+        discount = validation.coupon.maxDiscount;
+      }
+    } else {
+      discount = validation.coupon.discountValue;
+    }
+
+    setAppliedCoupon(validation.coupon);
+    setCouponDiscount(discount);
+    toast.success(validation.message);
   };
 
   const handleRemoveCoupon = () => {
@@ -226,6 +255,16 @@ export function CheckoutPage() {
     }
 
     if (couponActiveForPricing && appliedCoupon) {
+      try {
+        const blocked = await couponBlockedForPhone(appliedCoupon.code, customerPhone.trim());
+        if (blocked) {
+          toast.error(blocked);
+          return;
+        }
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : 'Could not check this coupon');
+        return;
+      }
       applyCoupon(appliedCoupon.code);
     }
 

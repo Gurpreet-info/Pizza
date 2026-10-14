@@ -7,6 +7,7 @@ import {
   parseOfferValidFrom,
   parseOfferValidUntil,
 } from '../lib/offerValidity';
+import { readCouponPopupPages } from '../lib/couponPopupPages';
 import { reconcileBogoAnyAutoLines } from '../lib/bogoAnyCart';
 import { reconcileBogoSameAutoLines } from '../lib/bogoSameCart';
 import { CartItem, Category, Coupon, DeliveryPostalCode, Location, MenuItem, Offer, Option, OptionGroup, Order, PageBanner, SeoSetting, SelectedOption, User } from '../types';
@@ -17,6 +18,8 @@ interface AppContextType {
   // Cart
   cart: CartItem[];
   addToCart: (item: CartItem) => void;
+  /** Adds past order lines to the current cart. Skips items that are missing or unavailable. */
+  addOrderLinesToCart: (lines: CartItem[]) => Promise<{ added: number; skipped: string[] }>;
   removeFromCart: (itemId: string) => void;
   updateCartItemQuantity: (itemId: string, quantity: number) => void;
   updateCartItemDetails: (
@@ -102,8 +105,8 @@ interface AppContextType {
   updateDeliveryPostalCode: (id: string, row: Partial<DeliveryPostalCode>) => void;
   deleteDeliveryPostalCode: (id: string) => void;
 
-  addCoupon: (coupon: Omit<Coupon, 'id' | 'usageCount'>) => void;
-  updateCoupon: (id: string, coupon: Partial<Coupon>) => void;
+  addCoupon: (coupon: Omit<Coupon, 'id' | 'usageCount'>) => Promise<void>;
+  updateCoupon: (id: string, coupon: Partial<Coupon>) => Promise<void>;
   deleteCoupon: (id: string) => void;
   validateCoupon: (code: string, subtotal: number) => { valid: boolean; message: string; coupon?: Coupon };
   applyCoupon: (code: string) => void;
@@ -116,11 +119,12 @@ interface AppContextType {
   
   createOrder: (order: Omit<Order, 'id' | 'createdAt'>) => Promise<string>;
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
+  updateOrderNote: (orderId: string, note: string) => Promise<void>;
   fetchAdminOrders: (filters?: {
     phone?: string;
     email?: string;
     coupon_code?: string;
-    date_filter?: 'last_week' | 'last_month' | 'custom';
+    date_filter?: 'yesterday' | 'last_week' | 'last_month' | 'this_week' | 'this_month' | 'custom';
     from_date?: string;
     to_date?: string;
   }) => Promise<Order[]>;
@@ -140,6 +144,8 @@ interface AppContextType {
   ensureUserDashboardLoaded: () => Promise<void>;
   /** Re-fetch `/orders/my` without loading overlay (for dashboard polling). */
   refreshUserOrdersQuiet: () => Promise<void>;
+  /** True while the full-screen loader is on screen. */
+  showLoadingOverlay: boolean;
   ensureAdminWorkspaceLoaded: () => Promise<void>;
   ensureSeoSettingsLoaded: () => Promise<void>;
   updateSeoSettings: (
@@ -166,11 +172,15 @@ export const useApp = () => {
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
+  const menuItemsRef = useRef<MenuItem[]>([]);
+  const optionsRef = useRef<Option[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [optionGroups, setOptionGroups] = useState<OptionGroup[]>([]);
   const [options, setOptions] = useState<Option[]>([]);
+  menuItemsRef.current = menuItems;
+  optionsRef.current = options;
   const [locations, setLocations] = useState<Location[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -244,6 +254,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       categoryId: categoryIds[0] ?? '',
       image: raw.image || '',
       available: Boolean(raw.available),
+      showOnFeaturedSlider:
+        raw.show_on_featured_slider !== undefined ? Boolean(raw.show_on_featured_slider) : false,
+      featuredSliderRank:
+        raw.featured_slider_rank != null && raw.featured_slider_rank !== ''
+          ? Number(raw.featured_slider_rank)
+          : null,
     };
   };
 
@@ -325,6 +341,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     usageLimit: Number(raw.usage_limit ?? 0),
     usageCount: Number(raw.usage_count ?? 0),
     active: Boolean(raw.active),
+    popupPages: readCouponPopupPages(raw.popup_pages),
   });
 
   const toOffer = (raw: any): Offer => {
@@ -406,6 +423,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         categoryId: categoryIds[0] ?? '',
         image: rawMenuItem?.image ?? '',
         available: Boolean(rawMenuItem?.available ?? true),
+        showOnFeaturedSlider: Boolean(rawMenuItem?.show_on_featured_slider ?? false),
+        featuredSliderRank:
+          rawMenuItem?.featured_slider_rank != null && rawMenuItem?.featured_slider_rank !== ''
+            ? Number(rawMenuItem.featured_slider_rank)
+            : null,
       };
 
       const selectedOptions: SelectedOption[] = [];
@@ -483,6 +505,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     couponCode: raw.coupon_code ?? undefined,
     couponDiscount: raw.coupon_discount ? Number(raw.coupon_discount) : undefined,
     offerDiscount: raw.offer_discount ? Number(raw.offer_discount) : undefined,
+    pastCompletedOrders:
+      raw.past_completed_orders != null ? Number(raw.past_completed_orders) : undefined,
+    adminNote: raw.admin_note != null && String(raw.admin_note).trim() !== '' ? String(raw.admin_note) : undefined,
+    priorAdminNotes: Array.isArray(raw.prior_admin_notes)
+      ? raw.prior_admin_notes
+          .map((item: { order_id?: number | string; note?: string }) => ({
+            orderId: String(item.order_id ?? ''),
+            note: String(item.note ?? '').trim(),
+          }))
+          .filter((item: { orderId: string; note: string }) => item.orderId !== '' && item.note !== '')
+      : undefined,
   });
 
   const request = async (path: string, options: RequestInit = {}, meta?: ApiRequestMeta) => {
@@ -586,7 +619,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const ensureMenuItems = async (force = false) => {
     if (loaded.current.menuItems && !force) return;
     const menu = await request('/menu-items');
-    setMenuItems((menu || []).map(toMenuItem));
+    const mapped = (menu || []).map(toMenuItem);
+    menuItemsRef.current = mapped;
+    setMenuItems(mapped);
     loaded.current.menuItems = true;
   };
 
@@ -607,7 +642,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const ensureOptions = async (force = false) => {
     if (loaded.current.options && !force) return;
     const opts = await request('/options');
-    setOptions((opts || []).map(toOption));
+    const mapped = (opts || []).map(toOption);
+    optionsRef.current = mapped;
+    setOptions(mapped);
     loaded.current.options = true;
   };
 
@@ -853,6 +890,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCart((prev) => finalizeCartWithBogo([...prev, { ...item, id: Date.now().toString() }]));
   };
 
+  const addOrderLinesToCart = async (lines: CartItem[]) => {
+    await Promise.all([ensureMenuItems(), ensureOptions(), ensureOffers()]);
+    const catalog = menuItemsRef.current.length > 0 ? menuItemsRef.current : menuItems;
+    const optionCatalog = optionsRef.current.length > 0 ? optionsRef.current : options;
+    const skipped: string[] = [];
+    const nextLines: CartItem[] = [];
+
+    for (const line of lines) {
+      const current = catalog.find((item) => item.id === line.menuItem.id);
+      if (!current || !current.available) {
+        skipped.push(line.menuItem.name || 'Item');
+        continue;
+      }
+      const selectedOptions = line.selectedOptions.map((group) => ({
+        ...group,
+        options: group.options.map((opt) => {
+          const live = optionCatalog.find((option) => option.id === opt.id);
+          if (live && live.active) {
+            return { ...opt, name: live.name, price: live.price };
+          }
+          return opt;
+        }),
+      }));
+      const optionsTotal = selectedOptions.reduce(
+        (sum, group) => sum + group.options.reduce((optionSum, opt) => optionSum + (Number(opt.price) || 0), 0),
+        0
+      );
+      nextLines.push({
+        id: '',
+        menuItem: current,
+        selectedOptions,
+        quantity: Math.max(1, Number(line.quantity) || 1),
+        totalPrice: current.basePrice + optionsTotal,
+        specialInstructions: line.specialInstructions,
+      });
+    }
+
+    if (nextLines.length > 0) {
+      const stamp = Date.now();
+      setCart((prev) =>
+        finalizeCartWithBogo([
+          ...prev,
+          ...nextLines.map((item, index) => ({ ...item, id: `${stamp}-reorder-${index}` })),
+        ])
+      );
+    }
+
+    return { added: nextLines.length, skipped };
+  };
+
   const removeFromCart = (itemId: string) => {
     setCart((prev) => finalizeCartWithBogo(prev.filter((item) => item.id !== itemId)));
   };
@@ -1068,6 +1155,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         category_ids: resolveCategoryIdsForApi(item),
         image: item.image,
         available: item.available,
+        show_on_featured_slider: item.showOnFeaturedSlider === true,
+        featured_slider_rank: item.featuredSliderRank ?? null,
       }),
     })) as { id: number | string };
     await ensureMenuItems(true);
@@ -1085,6 +1174,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ...(categoryIds.length > 0 ? { category_ids: categoryIds } : {}),
         image: item.image,
         available: item.available,
+        ...(item.showOnFeaturedSlider !== undefined
+          ? { show_on_featured_slider: item.showOnFeaturedSlider }
+          : {}),
+        ...(item.featuredSliderRank !== undefined
+          ? { featured_slider_rank: item.featuredSliderRank }
+          : {}),
       }),
     });
     await ensureMenuItems(true);
@@ -1295,7 +1390,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addCoupon = (coupon: Omit<Coupon, 'id' | 'usageCount'>) => {
-    void request('/coupons', {
+    return request('/coupons', {
       method: 'POST',
       body: JSON.stringify({
         code: coupon.code,
@@ -1308,12 +1403,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         valid_until: coupon.validUntil,
         usage_limit: coupon.usageLimit,
         active: coupon.active,
+        popup_pages: coupon.popupPages ?? [],
       }),
     }).then(() => ensureCoupons(true));
   };
 
   const updateCoupon = (id: string, coupon: Partial<Coupon>) => {
-    void request(`/coupons/${id}`, {
+    return request(`/coupons/${id}`, {
       method: 'PUT',
       body: JSON.stringify({
         code: coupon.code,
@@ -1327,6 +1423,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         usage_limit: coupon.usageLimit,
         usage_count: coupon.usageCount,
         active: coupon.active,
+        ...(coupon.popupPages !== undefined ? { popup_pages: coupon.popupPages } : {}),
       }),
     }).then(() => ensureCoupons(true));
   };
@@ -1506,7 +1603,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     phone?: string;
     email?: string;
     coupon_code?: string;
-    date_filter?: 'last_week' | 'last_month' | 'custom';
+    date_filter?: 'yesterday' | 'last_week' | 'last_month' | 'this_week' | 'this_month' | 'custom';
     from_date?: string;
     to_date?: string;
   }): Promise<Order[]> => {
@@ -1550,11 +1647,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }).then(() => ensureAdminOrders(true));
   };
 
+  const updateOrderNote = async (orderId: string, note: string) => {
+    await request(`/orders/${orderId}/note`, {
+      method: 'PATCH',
+      body: JSON.stringify({ admin_note: note }),
+    });
+    await ensureAdminOrders(true);
+  };
+
   return (
     <AppContext.Provider
       value={{
         cart,
         addToCart,
+        addOrderLinesToCart,
         removeFromCart,
         updateCartItemQuantity,
         updateCartItemDetails,
@@ -1611,6 +1717,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         applyOfferToCart,
         createOrder,
         updateOrderStatus,
+        updateOrderNote,
         fetchAdminOrders,
         refreshAdminOrdersList,
         apiRequest: request,
@@ -1625,6 +1732,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ensureOrderConfirmationLoaded,
         ensureUserDashboardLoaded,
         refreshUserOrdersQuiet,
+        showLoadingOverlay,
         ensureAdminWorkspaceLoaded,
         ensureSeoSettingsLoaded: ensureSeoSettings,
         updateSeoSettings,

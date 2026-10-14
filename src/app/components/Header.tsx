@@ -26,10 +26,12 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-white">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        <Link to="/" className="flex items-center space-x-2">
-          <div className="text-2xl font-bold text-orange-600">
-            🍕 Pizza Offers
-          </div>
+        <Link to="/" className="flex shrink-0 items-center">
+          <img
+            src="/pizza_offers_logo.png"
+            alt="Pizza Offers"
+            className="h-10 w-auto object-contain sm:h-12"
+          />
         </Link>
 
         <nav className="hidden md:flex items-center space-x-6">

@@ -9,6 +9,8 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
+import { Checkbox } from '../components/ui/checkbox';
+import { COUPON_POPUP_PAGES, CouponPopupPage } from '../lib/couponPopupPages';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '../components/ui/dialog';
@@ -87,6 +89,7 @@ export function AdminPage() {
     addOffer, updateOffer, deleteOffer,
     fetchAdminOrders,
     updateOrderStatus,
+    updateOrderNote,
     refreshAdminOrdersList,
     ensureAdminWorkspaceLoaded,
     ensureSeoSettingsLoaded,
@@ -295,7 +298,7 @@ export function AdminPage() {
     const byId = new Map(orders.map((o) => [String(o.id), o]));
     for (const id of Array.from(ordersNeedingVoiceAlertRef.current)) {
       const o = byId.get(id);
-      if (!o || o.status === 'confirmed' || o.status === 'cancelled') {
+      if (!o || o.status === 'confirmed' || o.status === 'completed' || o.status === 'cancelled') {
         ordersNeedingVoiceAlertRef.current.delete(id);
       }
     }
@@ -317,7 +320,10 @@ export function AdminPage() {
 
   const unseenOrderCount = useMemo(() => {
     if (!orders.length) return 0;
-    return orders.filter((o) => (Number(o.id) || 0) > lastAckOrderId).length;
+    return orders.filter((o) => {
+      if ((Number(o.id) || 0) <= lastAckOrderId) return false;
+      return o.status !== 'completed' && o.status !== 'cancelled';
+    }).length;
   }, [orders, lastAckOrderId]);
 
   const acknowledgeOrdersSeen = () => {
@@ -495,6 +501,7 @@ export function AdminPage() {
             locations={locations}
             fetchAdminOrders={fetchAdminOrders}
             updateOrderStatus={updateOrderStatus}
+            updateOrderNote={updateOrderNote}
           />
         </TabsContent>
        
@@ -564,6 +571,8 @@ const SEO_PAGE_OPTIONS = [
   { key: 'cart', label: 'Cart' },
   { key: 'checkout', label: 'Checkout' },
   { key: 'locations', label: 'Locations' },
+  { key: 'about_us', label: 'About Us' },
+  { key: 'privacy_policy', label: 'Privacy Policy' },
   { key: 'login', label: 'Login' },
   { key: 'user_dashboard', label: 'User dashboard' },
   { key: 'order_confirmation', label: 'Order confirmation' },
@@ -1389,6 +1398,8 @@ function MenuItemsManager({
     categoryIds: [] as string[],
     image: '',
     available: true,
+    showOnFeaturedSlider: false,
+    featuredSliderRank: '',
   });
 
   const resetForm = () => {
@@ -1399,6 +1410,8 @@ function MenuItemsManager({
       categoryIds: [],
       image: '',
       available: true,
+      showOnFeaturedSlider: false,
+      featuredSliderRank: '',
     });
     setEditingItem(null);
     setLinkedOptionGroupIds([]);
@@ -1444,6 +1457,8 @@ function MenuItemsManager({
             : [],
       image: item.image,
       available: item.available,
+      showOnFeaturedSlider: item.showOnFeaturedSlider === true,
+      featuredSliderRank: item.featuredSliderRank != null ? String(item.featuredSliderRank) : '',
     });
     setLinkedOptionGroupIds(linked);
     setInitialLinkedOptionGroupIds(linked);
@@ -1503,6 +1518,14 @@ function MenuItemsManager({
       return;
     }
 
+    const featuredRank = formData.featuredSliderRank.trim()
+      ? Number.parseInt(formData.featuredSliderRank, 10)
+      : null;
+    if (formData.showOnFeaturedSlider && (!featuredRank || featuredRank < 1)) {
+      toast.error('Enter a most liked number (1, 2, 3…)');
+      return;
+    }
+
     const itemData = {
       name: formData.name,
       description: formData.description,
@@ -1510,6 +1533,8 @@ function MenuItemsManager({
       categoryIds: formData.categoryIds,
       image: formData.image,
       available: formData.available,
+      showOnFeaturedSlider: formData.showOnFeaturedSlider,
+      featuredSliderRank: featuredRank,
     };
 
     try {
@@ -1565,6 +1590,8 @@ function MenuItemsManager({
         item.basePrice.toFixed(2),
         String(item.basePrice),
         item.available ? 'available' : 'unavailable',
+        item.showOnFeaturedSlider ? 'featured' : '',
+        item.featuredSliderRank != null ? String(item.featuredSliderRank) : '',
         item.id,
       ]
         .join(' ')
@@ -1659,6 +1686,36 @@ function MenuItemsManager({
                   />
                   <Label htmlFor="available">Available</Label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="show-on-featured-slider"
+                    checked={formData.showOnFeaturedSlider}
+                    onCheckedChange={(checked) =>
+                      setFormData((prev) => ({ ...prev, showOnFeaturedSlider: checked }))
+                    }
+                  />
+                  <Label htmlFor="show-on-featured-slider">Show on featured slider</Label>
+                </div>
+                {formData.showOnFeaturedSlider ? (
+                  <div className="max-w-[12rem]">
+                    <Label htmlFor="featured-slider-rank">Most liked number</Label>
+                    <Input
+                      id="featured-slider-rank"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={formData.featuredSliderRank}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, featuredSliderRank: e.target.value }))
+                      }
+                      placeholder="1"
+                      className="mt-1"
+                    />
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      1 shows as #1 most liked, 2 as #2 most liked.
+                    </p>
+                  </div>
+                ) : null}
 
                 <Separator />
                 <div className="space-y-4">
@@ -1731,13 +1788,14 @@ function MenuItemsManager({
               <TableHead>Category</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Featured</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {menuItemsTableRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground text-center py-8">
+                <TableCell colSpan={6} className="text-muted-foreground text-center py-8">
                   No menu items match your search.
                 </TableCell>
               </TableRow>
@@ -1751,6 +1809,17 @@ function MenuItemsManager({
                     <Badge variant={item.available ? 'default' : 'secondary'}>
                       {item.available ? 'Available' : 'Unavailable'}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {item.showOnFeaturedSlider ? (
+                      <Badge>
+                        {item.featuredSliderRank != null
+                          ? `#${item.featuredSliderRank} most liked`
+                          : 'Shown'}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
@@ -1960,6 +2029,7 @@ function CouponsManager({ coupons, addCoupon, updateCoupon, deleteCoupon }: any)
     validUntil: '',
     usageLimit: '',
     active: true,
+    popupPages: [] as CouponPopupPage[],
   });
 
   const resetForm = () => {
@@ -1974,6 +2044,7 @@ function CouponsManager({ coupons, addCoupon, updateCoupon, deleteCoupon }: any)
       validUntil: '',
       usageLimit: '',
       active: true,
+      popupPages: [] as CouponPopupPage[],
     });
     setEditingCoupon(null);
   };
@@ -1991,13 +2062,14 @@ function CouponsManager({ coupons, addCoupon, updateCoupon, deleteCoupon }: any)
       validUntil: new Date(coupon.validUntil).toISOString().split('T')[0],
       usageLimit: coupon.usageLimit.toString(),
       active: coupon.active,
+      popupPages: (coupon.popupPages ?? []) as CouponPopupPage[],
     });
     setIsOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const couponData = {
       code: formData.code.toUpperCase(),
       description: formData.description,
@@ -2009,18 +2081,22 @@ function CouponsManager({ coupons, addCoupon, updateCoupon, deleteCoupon }: any)
       validUntil: new Date(formData.validUntil),
       usageLimit: parseInt(formData.usageLimit) || 100,
       active: formData.active,
+      popupPages: formData.popupPages ?? [],
     };
 
-    if (editingCoupon) {
-      updateCoupon(editingCoupon.id, couponData);
-      toast.success('Coupon updated');
-    } else {
-      addCoupon(couponData);
-      toast.success('Coupon added');
+    try {
+      if (editingCoupon) {
+        await updateCoupon(editingCoupon.id, couponData);
+        toast.success('Coupon updated');
+      } else {
+        await addCoupon(couponData);
+        toast.success('Coupon added');
+      }
+      setIsOpen(false);
+      resetForm();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save coupon');
     }
-
-    setIsOpen(false);
-    resetForm();
   };
 
   const handleDelete = (id: string) => {
@@ -2173,6 +2249,31 @@ function CouponsManager({ coupons, addCoupon, updateCoupon, deleteCoupon }: any)
                   />
                   <Label htmlFor="active">Active</Label>
                 </div>
+                <div>
+                  <Label>Show in popup</Label>
+                  <p className="text-xs text-gray-500 mt-1 mb-3">
+                    Choose the pages where this coupon can open as a popup. Leave all unchecked to keep it off the popup.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {COUPON_POPUP_PAGES.map((page) => (
+                      <label key={page.key} className="flex items-center gap-2 text-sm text-gray-800">
+                        <Checkbox
+                          type="button"
+                          checked={(formData.popupPages ?? []).includes(page.key)}
+                          onCheckedChange={(checked) => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              popupPages: checked === true
+                                ? ((prev.popupPages ?? []).includes(page.key) ? prev.popupPages : [...(prev.popupPages ?? []), page.key])
+                                : (prev.popupPages ?? []).filter((key) => key !== page.key),
+                            }));
+                          }}
+                        />
+                        {page.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
               <DialogFooter>
                 <Button type="submit">{editingCoupon ? 'Update' : 'Add'} Coupon</Button>
@@ -2192,13 +2293,14 @@ function CouponsManager({ coupons, addCoupon, updateCoupon, deleteCoupon }: any)
               <TableHead>Valid Until</TableHead>
               <TableHead>Used/Limit</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Popup</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {coupons.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                <TableCell colSpan={9} className="text-center py-8 text-gray-500">
                   No coupons found. Create one to get started!
                 </TableCell>
               </TableRow>
@@ -2222,6 +2324,9 @@ function CouponsManager({ coupons, addCoupon, updateCoupon, deleteCoupon }: any)
                     <Badge variant={coupon.active ? 'default' : 'secondary'}>
                       {coupon.active ? 'Active' : 'Inactive'}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-[180px] text-xs text-gray-700">
+                    {COUPON_POPUP_PAGES.filter((page) => (coupon.popupPages ?? []).includes(page.key)).map((page) => page.label).join(', ') || '—'}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">

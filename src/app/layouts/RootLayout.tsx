@@ -3,11 +3,13 @@ import { Outlet } from 'react-router';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 import { ScrollToTop } from '../components/ScrollToTop';
+import { CouponPopup } from '../components/CouponPopup';
 
 export function RootLayout() {
   return (
     <div className="flex flex-col min-h-screen">
       <ScrollToTop />
+      <CouponPopup />
       <Header />
       <main className="flex-1">
         <Suspense

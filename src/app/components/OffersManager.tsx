@@ -226,6 +226,12 @@ export function OffersManager({ offers, addOffer, updateOffer, deleteOffer }: Of
       categoryId: categoryIds[0] ?? '',
       image: item.image || '',
       available: Boolean(item.available),
+      showOnFeaturedSlider:
+        item.show_on_featured_slider !== undefined ? Boolean(item.show_on_featured_slider) : false,
+      featuredSliderRank:
+        item.featured_slider_rank != null && item.featured_slider_rank !== ''
+          ? Number(item.featured_slider_rank)
+          : null,
     };
   };
 
